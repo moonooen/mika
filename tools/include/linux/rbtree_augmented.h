@@ -63,8 +63,20 @@ rb_insert_augmented(struct rb_node *node, struct rb_root *root,
 	__rb_insert_augmented(node, root, augment->rotate);
 }
 
-#define RB_DECLARE_CALLBACKS(rbstatic, rbname, rbstruct, rbfield,	\
-			     rbtype, rbaugmented, rbcompute)		\
+/*
+ * Template for declaring augmented rbtree callbacks (generic case)
+ *
+ * RBSTATIC:    'static' or empty
+ * RBNAME:      name of the rb_augment_callbacks structure
+ * RBSTRUCT:    struct type of the tree nodes
+ * RBFIELD:     name of struct rb_node field within RBSTRUCT
+ * RBTYPE:      type of the RBAUGMENTED field
+ * RBAUGMENTED: name of RBTYPE field within RBSTRUCT holding data for subtree
+ * RBCOMPUTE:   name of function that recomputes the RBAUGMENTED data
+ */
+
+#define RB_DECLARE_CALLBACKS(RBSTATIC, RBNAME, RBSTRUCT, RBFIELD,	\
+			     RBTYPE, RBAUGMENTED, RBCOMPUTE)		\
 static inline void							\
 rbname ## _propagate(struct rb_node *rb, struct rb_node *stop)		\
 {									\
