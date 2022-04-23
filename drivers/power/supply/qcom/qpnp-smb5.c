@@ -4037,6 +4037,8 @@ static int smb5_init_connector_type(struct smb_charger *chg)
 	}
 		smblib_rerun_apsd_if_required(chg);
 
+	smblib_rerun_apsd_if_required(chg);
+	
 	return 0;
 
 }
