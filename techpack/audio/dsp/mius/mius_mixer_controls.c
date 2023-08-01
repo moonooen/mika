@@ -568,14 +568,14 @@ int mius_ultrasound_tx_port_set(struct snd_kcontrol *kcontrol,
 	}
 
 	ultrasound_tx_port_cache = ucontrol->value.integer.value[0];
-	printk(KERN_DEBUG "[MIUS] Via ULTRASOUND_TX_PORT_ID enable=%d",
+	pr_debug("[MIUS] Via ULTRASOUND_TX_PORT_ID enable=%d",
 	       ultrasound_tx_port_cache);
 	if (ultrasound_tx_port_cache)
 		ret = mius_open_port(ULTRASOUND_TX_PORT_ID);
 	else
 		ret = mius_close_port(ULTRASOUND_TX_PORT_ID);
 
-	MI_PRINT_E("ultrasound_tx_port: enable=%d ret=%d",
+	MI_PRINT_D("ultrasound_tx_port: enable=%d ret=%d",
 		   ultrasound_tx_port_cache, ret);
 
 	return ret;
@@ -602,7 +602,7 @@ int mius_ultrasound_rx_port_set(struct snd_kcontrol *kcontrol,
 	}
 
 	ultrasound_rx_port_cache = ucontrol->value.integer.value[0];
-	printk(KERN_DEBUG
+	pr_debug(
 	       "[MIUS] if we are here, it is wrong for mius, enable=%d",
 	       ultrasound_rx_port_cache);
 	if (ultrasound_rx_port_cache)
@@ -610,7 +610,7 @@ int mius_ultrasound_rx_port_set(struct snd_kcontrol *kcontrol,
 	else
 		ret = mius_close_port(ULTRASOUND_RX_PORT_ID);
 
-	MI_PRINT_E("mi ultrasound_rx_port: enable=%d ret=%d",
+	MI_PRINT_D("mi ultrasound_rx_port: enable=%d ret=%d",
 		   ultrasound_rx_port_cache, ret);
 
 	return 0;
@@ -911,7 +911,7 @@ int mius_system_configuration_param_get(struct snd_kcontrol *kcontrol,
 
 	if (mc->shift >= MIUS_SYSTEM_CONFIGURATION_CUSTOM_SETTING_0 &&
 	    mc->shift <= MIUS_SYSTEM_CONFIGURATION_CUSTOM_SETTING_15) {
-		MI_PRINT_E("get MIUS_SYSTEM_CONFIGURATION_CUSTOM_SETTING_%02d",
+		MI_PRINT_D("get MIUS_SYSTEM_CONFIGURATION_CUSTOM_SETTING_%02d",
 			   mc->shift -
 				   MIUS_SYSTEM_CONFIGURATION_CUSTOM_SETTING_0);
 		ucontrol->value.integer.value[0] = 0;
@@ -1018,13 +1018,13 @@ int mius_system_configuration_param_put(struct snd_kcontrol *kcontrol,
 	    mc->shift <= MIUS_SYSTEM_CONFIGURATION_CUSTOM_SETTING_15) {
 		const size_t csi =
 			mc->shift - MIUS_SYSTEM_CONFIGURATION_CUSTOM_SETTING_0;
-		MI_PRINT_E(
+		MI_PRINT_D(
 			"MIUS_SYSTEM_CONFIGURATION_CUSTOM_SETTING_XX csi:%zu",
 			csi);
 		if (csi >=
 		    ARRAY_SIZE(mius_system_configuration_cache.custom_settings))
 			return -EINVAL;
-		MI_PRINT_E("ucontrol->value.integer.value[0]:%ld",
+		MI_PRINT_D("ucontrol->value.integer.value[0]:%ld",
 			   ucontrol->value.integer.value[0]);
 		mius_system_configuration_cache.custom_settings[csi] =
 			ucontrol->value.integer.value[0];
