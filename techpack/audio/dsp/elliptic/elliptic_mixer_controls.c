@@ -834,7 +834,7 @@ int elliptic_system_configuration_param_get(struct snd_kcontrol *kcontrol,
 
 	if (mc->shift >= ELLIPTIC_SYSTEM_CONFIGURATION_CUSTOM_SETTING_0 &&
 	    mc->shift <= ELLIPTIC_SYSTEM_CONFIGURATION_CUSTOM_SETTING_15) {
-		EL_PRINT_E(
+		EL_PRINT_D(
 			"get ELLIPTIC_SYSTEM_CONFIGURATION_CUSTOM_SETTING_%02d",
 			mc->shift -
 				ELLIPTIC_SYSTEM_CONFIGURATION_CUSTOM_SETTING_0);
