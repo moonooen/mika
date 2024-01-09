@@ -1934,7 +1934,7 @@ static int smb5_usb_port_get_prop(struct power_supply *psy,
                 val->intval = POWER_SUPPLY_SCOPE_UNKNOWN;
                 break;
 	default:
-		pr_err_ratelimited("Get prop %d is not supported in pc_port\n",
+		pr_debug_ratelimited("Get prop %d is not supported in pc_port\n",
 				psp);
 		return -EINVAL;
 	}
@@ -3234,7 +3234,7 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 		rc = smblib_night_charging_func(chg, val);
 		break;
 	default:
-		pr_debug_ratelimited("batt power supply prop %d not supported\n", psp);
+		pr_debug("batt power supply prop %d not supported\n", psp);
 		return -EINVAL;
 	}
 
