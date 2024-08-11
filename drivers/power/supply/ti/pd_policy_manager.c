@@ -374,8 +374,7 @@ static bool pd_disable_cp_by_jeita_status(struct usbpd_pm *pdpm)
 /* get bq27z561 fastcharge mode to enable or disabled */
 static bool pd_get_bms_digest_verified(struct usbpd_pm *pdpm)
 {
-
-		return true;
+	return true;
 }
 
 /* get bq27z561 chip ok*/
