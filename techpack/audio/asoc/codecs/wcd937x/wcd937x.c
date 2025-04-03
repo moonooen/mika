@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
-<<<<<<< HEAD:techpack/audio/asoc/codecs/wcd937x/wcd937x.c
- * Copyright (c) 2023,2024 Qualcomm Innovation Center, Inc. All rights reserved.
-=======
  * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
->>>>>>> 2768291f7531c529b5c5bbb50940ba47fd9d79bd:asoc/codecs/wcd937x/wcd937x.c
  */
 
 #include <linux/module.h>
