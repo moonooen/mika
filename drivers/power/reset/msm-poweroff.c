@@ -47,7 +47,6 @@
 
 #define KASLR_OFFSET_PROP "qcom,msm-imem-kaslr_offset"
 #define KASLR_OFFSET_BIT_MASK	0x00000000FFFFFFFF
-#define DISPLAY_CONFIG_OFFSET_PROP "qcom,msm-imem-display_config_offset"
 
 static int restart_mode;
 static void *restart_reason, *dload_type_addr;
@@ -281,25 +280,6 @@ static void store_kaslr_offset(void)
 }
 #endif /* CONFIG_RANDOMIZE_BASE */
 
-/*
- * set display config imem first 4 bytes to 0xdead4ead, because imem context
- * will not lost when warm reset. if panic, xbl ramdump will display orange
- * screen, and framebuffer addr is determined by these four bytes in
- * MDP_GetDisplayBootConfig function. so set these four bytes to a invalid
- * value and let the framebuffer of orange screen use
- * RAMDUMP_FRAME_BUFFER_ADDRESS(0xb0400000)
- */
-static void clear_display_config(void)
-{
-	void *display_config_imem_addr = map_prop_mem(DISPLAY_CONFIG_OFFSET_PROP);
-
-	if (display_config_imem_addr) {
-		__raw_writel(0xdead4ead, display_config_imem_addr);
-		iounmap(display_config_imem_addr);
-	}
-	pr_err("%s clear display config\n", __func__);
-}
-
 static void setup_dload_mode_support(void)
 {
 	int ret;
@@ -314,7 +294,6 @@ static void setup_dload_mode_support(void)
 	emergency_dload_mode_addr = map_prop_mem(EDL_MODE_PROP);
 
 	store_kaslr_offset();
-	clear_display_config();
 
 	dload_type_addr = map_prop_mem(IMEM_DL_TYPE_PROP);
 	if (!dload_type_addr)
@@ -488,12 +467,13 @@ static void halt_spmi_pmic_arbiter(void)
 static void msm_restart_prepare(const char *cmd)
 {
 	bool need_warm_reset = false;
-	/* Write download mode flags if restart_mode says so
+	/* Write download mode flags if we're panic'ing
+	 * Write download mode flags if restart_mode says so
 	 * Kill download mode if master-kill switch is set
 	 */
 
 	set_dload_mode(download_mode &&
-			(restart_mode == RESTART_DLOAD));
+			(in_panic || restart_mode == RESTART_DLOAD));
 
 	if (qpnp_pon_check_hard_reset_stored()) {
 		/* Set warm reset as true when device is in dload mode */
@@ -515,14 +495,6 @@ static void msm_restart_prepare(const char *cmd)
 	else
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
 
-	if (in_panic) {
-		// Reboot to recovery
-		qpnp_pon_set_restart_reason(
-			PON_RESTART_REASON_RECOVERY);
-		__raw_writel(0x77665502, restart_reason);
-		goto finish_set_restart_reason;
-	}
-
 	if (cmd != NULL) {
 		if (!strncmp(cmd, "bootloader", 10)) {
 			qpnp_pon_set_restart_reason(
@@ -531,10 +503,6 @@ static void msm_restart_prepare(const char *cmd)
 		} else if (!strncmp(cmd, "recovery", 8)) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RECOVERY);
-			__raw_writel(0x77665502, restart_reason);
-		} else if (!strncmp(cmd, "exaid", 5)) {
-			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_EXAID);
 			__raw_writel(0x77665502, restart_reason);
 		} else if (!strcmp(cmd, "rtc")) {
 			qpnp_pon_set_restart_reason(
@@ -563,15 +531,10 @@ static void msm_restart_prepare(const char *cmd)
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
 		} else {
-			qpnp_pon_set_restart_reason(PON_RESTART_REASON_NORMAL);
 			__raw_writel(0x77665501, restart_reason);
 		}
-	} else {
-		qpnp_pon_set_restart_reason(PON_RESTART_REASON_NORMAL);
-		__raw_writel(0x77665501, restart_reason);
 	}
 
-finish_set_restart_reason:
 	flush_cache_all();
 
 	/*outer_flush_all is not supported by 64bit kernel*/

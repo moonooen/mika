@@ -64,7 +64,6 @@ obj-$(CONFIG_MISC_RTSX)		+= cardreader/
 obj-$(CONFIG_UID_SYS_STATS)	+= uid_sys_stats.o
 obj-$(CONFIG_MEMORY_STATE_TIME)	+= memory_state_time.o
 obj-$(CONFIG_QPNP_MISC)		+= qpnp-misc.o
-obj-$(CONFIG_FORCE_FAST_CHARGE) += fastchg.o
 
 obj-$(CONFIG_OKL4_USER_VIRQ)	+= okl4-virq.o
 obj-$(CONFIG_OKL4_RINGBUF)	+= okl4-ringbuf.o
@@ -79,7 +78,3 @@ obj-$(CONFIG_QTI_XR_SMRTVWR_MISC) += qxr-stdalonevwr.o
 obj-$(CONFIG_FPR_FPC)		+= fpr_FingerprintCard/
 obj-y                           += qrc/
 obj-$(CONFIG_KINECTICS_XR_NORDIC) += kxrctrl/
-
-obj-$(CONFIG_HALL_AKM09970)	+= akm09970.o
-obj-$(CONFIG_MOTOR_DRV8846)	+= drv8846.o
-obj-$(CONFIG_SPI_XIAOMI_TP)	+= spi-xiaomi-tp.o
