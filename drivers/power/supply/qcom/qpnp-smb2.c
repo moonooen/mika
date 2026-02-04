@@ -1195,7 +1195,7 @@ static int smb2_batt_get_prop(struct power_supply *psy,
 		val->intval = chg->fcc_stepper_enable;
 		break;
 	default:
-		pr_err("batt power supply prop %d not supported\n", psp);
+		pr_debug_ratelimited("batt power supply prop %d not supported\n", psp);
 		return -EINVAL;
 	}
 
