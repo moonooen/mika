@@ -18,7 +18,8 @@ drm-y       :=	drm_auth.o drm_bufs.o drm_cache.o \
 		drm_encoder.o drm_mode_object.o drm_property.o \
 		drm_plane.o drm_color_mgmt.o drm_print.o \
 		drm_dumb_buffers.o drm_mode_config.o drm_vblank.o \
-		drm_syncobj.o drm_lease.o drm_writeback.o drm_client.o
+		drm_syncobj.o drm_lease.o drm_writeback.o drm_client.o \
+		drm_notifier_mi.o
 
 drm-$(CONFIG_DRM_LIB_RANDOM) += lib/drm_random.o
 drm-$(CONFIG_DRM_VM) += drm_vm.o
@@ -79,7 +80,7 @@ obj-$(CONFIG_DRM_UDL) += udl/
 obj-$(CONFIG_DRM_AST) += ast/
 obj-$(CONFIG_DRM_ARMADA) += armada/
 obj-$(CONFIG_DRM_ATMEL_HLCDC)	+= atmel-hlcdc/
-obj-$(CONFIG_DRM_RCAR_DU) += rcar-du/
+obj-y			+= rcar-du/
 obj-$(CONFIG_DRM_SHMOBILE) +=shmobile/
 obj-y			+= omapdrm/
 obj-$(CONFIG_DRM_SUN4I) += sun4i/

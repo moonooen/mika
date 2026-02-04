@@ -429,6 +429,10 @@ static int set_sync_ep_implicit_fb_quirk(struct snd_usb_substream *subs,
 	case USB_ID(0x0582, 0x01d8): /* BOSS Katana */
 		/* BOSS Katana amplifiers do not need quirks */
 		return 0;
+	case USB_ID(0x07fd, 0x0004): /* MOTU MicroBook II */
+		ep = 0x84;
+		ifnum = 0;
+		goto add_sync_ep_from_ifnum;
 	}
 
 	if (attr == USB_ENDPOINT_SYNC_ASYNC &&
@@ -2006,7 +2010,7 @@ void snd_usb_preallocate_buffer(struct snd_usb_substream *subs)
 {
 	struct snd_pcm *pcm = subs->stream->pcm;
 	struct snd_pcm_substream *s = pcm->streams[subs->direction].substream;
-	struct device *dev = subs->dev->bus->controller;
+	struct device *dev = subs->dev->bus->sysdev;
 
 	if (!snd_usb_use_vmalloc)
 		snd_pcm_lib_preallocate_pages(s, SNDRV_DMA_TYPE_DEV_SG,
