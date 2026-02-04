@@ -30,7 +30,7 @@
 #include <asm/assembler.h>
 #include <asm/hwcap.h>
 #include <asm/pgtable-hwdef.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <asm/page.h>
 #include <asm/ptrace.h>
 #include "proc-macros.S"
@@ -474,7 +474,7 @@ arm926_crval:
 
 	.align
 
-	.section ".proc.info.init", "a"
+	.section ".proc.info.init", #alloc
 
 	.type	__arm926_proc_info,#object
 __arm926_proc_info:

@@ -445,7 +445,9 @@ static unsigned long __munlock_pagevec_fill(struct pagevec *pvec,
 void munlock_vma_pages_range(struct vm_area_struct *vma,
 			     unsigned long start, unsigned long end)
 {
-	vma->vm_flags &= VM_LOCKED_CLEAR_MASK;
+	vm_write_begin(vma);
+	WRITE_ONCE(vma->vm_flags, vma->vm_flags & VM_LOCKED_CLEAR_MASK);
+	vm_write_end(vma);
 
 	while (start < end) {
 		struct page *page;
@@ -569,10 +571,11 @@ success:
 	 * It's okay if try_to_unmap_one unmaps a page just after we
 	 * set VM_LOCKED, populate_vma_page_range will bring it back.
 	 */
-
-	if (lock)
-		vma->vm_flags = newflags;
-	else
+	if (lock) {
+		vm_write_begin(vma);
+		WRITE_ONCE(vma->vm_flags, newflags);
+		vm_write_end(vma);
+	} else
 		munlock_vma_pages_range(vma, start, end);
 
 out:
@@ -686,7 +689,7 @@ static __must_check int do_mlock(unsigned long start, size_t len, vm_flags_t fla
 	lock_limit >>= PAGE_SHIFT;
 	locked = len >> PAGE_SHIFT;
 
-	if (mmap_write_lock_killable(current->mm))
+	if (down_write_killable(&current->mm->mmap_sem))
 		return -EINTR;
 
 	locked += current->mm->locked_vm;
@@ -705,7 +708,7 @@ static __must_check int do_mlock(unsigned long start, size_t len, vm_flags_t fla
 	if ((locked <= lock_limit) || capable(CAP_IPC_LOCK))
 		error = apply_vma_lock_flags(start, len, flags);
 
-	mmap_write_unlock(current->mm);
+	up_write(&current->mm->mmap_sem);
 	if (error)
 		return error;
 
@@ -742,10 +745,10 @@ SYSCALL_DEFINE2(munlock, unsigned long, start, size_t, len)
 	len = PAGE_ALIGN(len + (offset_in_page(start)));
 	start &= PAGE_MASK;
 
-	if (mmap_write_lock_killable(current->mm))
+	if (down_write_killable(&current->mm->mmap_sem))
 		return -EINTR;
 	ret = apply_vma_lock_flags(start, len, 0);
-	mmap_write_unlock(current->mm);
+	up_write(&current->mm->mmap_sem);
 
 	return ret;
 }
@@ -810,14 +813,14 @@ SYSCALL_DEFINE1(mlockall, int, flags)
 	lock_limit = rlimit(RLIMIT_MEMLOCK);
 	lock_limit >>= PAGE_SHIFT;
 
-	if (mmap_write_lock_killable(current->mm))
+	if (down_write_killable(&current->mm->mmap_sem))
 		return -EINTR;
 
 	ret = -ENOMEM;
 	if (!(flags & MCL_CURRENT) || (current->mm->total_vm <= lock_limit) ||
 	    capable(CAP_IPC_LOCK))
 		ret = apply_mlockall_flags(flags);
-	mmap_write_unlock(current->mm);
+	up_write(&current->mm->mmap_sem);
 	if (!ret && (flags & MCL_CURRENT))
 		mm_populate(0, TASK_SIZE);
 
@@ -828,10 +831,10 @@ SYSCALL_DEFINE0(munlockall)
 {
 	int ret;
 
-	if (mmap_write_lock_killable(current->mm))
+	if (down_write_killable(&current->mm->mmap_sem))
 		return -EINTR;
 	ret = apply_mlockall_flags(0);
-	mmap_write_unlock(current->mm);
+	up_write(&current->mm->mmap_sem);
 	return ret;
 }
 

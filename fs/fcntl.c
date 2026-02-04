@@ -84,8 +84,8 @@ static int setfl(int fd, struct file * filp, unsigned long arg)
 	return error;
 }
 
-void __f_setown(struct file *filp, struct pid *pid, enum pid_type type,
-		int force)
+static void f_modown(struct file *filp, struct pid *pid, enum pid_type type,
+                     int force)
 {
 	write_lock_irq(&filp->f_owner.lock);
 	if (force || !filp->f_owner.pid) {
@@ -95,12 +95,18 @@ void __f_setown(struct file *filp, struct pid *pid, enum pid_type type,
 
 		if (pid) {
 			const struct cred *cred = current_cred();
-			security_file_set_fowner(filp);
 			filp->f_owner.uid = cred->uid;
 			filp->f_owner.euid = cred->euid;
 		}
 	}
 	write_unlock_irq(&filp->f_owner.lock);
+}
+
+void __f_setown(struct file *filp, struct pid *pid, enum pid_type type,
+		int force)
+{
+	security_file_set_fowner(filp);
+	f_modown(filp, pid, type, force);
 }
 EXPORT_SYMBOL(__f_setown);
 
@@ -137,7 +143,7 @@ EXPORT_SYMBOL(f_setown);
 
 void f_delown(struct file *filp)
 {
-	__f_setown(filp, NULL, PIDTYPE_TGID, 1);
+	f_modown(filp, NULL, PIDTYPE_TGID, 1);
 }
 
 pid_t f_getown(struct file *filp)
@@ -773,10 +779,9 @@ void send_sigio(struct fown_struct *fown, int fd, int band)
 {
 	struct task_struct *p;
 	enum pid_type type;
-	unsigned long flags;
 	struct pid *pid;
 	
-	read_lock_irqsave(&fown->lock, flags);
+	read_lock(&fown->lock);
 
 	type = fown->pid_type;
 	pid = fown->pid;
@@ -797,7 +802,7 @@ void send_sigio(struct fown_struct *fown, int fd, int band)
 		read_unlock(&tasklist_lock);
 	}
  out_unlock_fown:
-	read_unlock_irqrestore(&fown->lock, flags);
+	read_unlock(&fown->lock);
 }
 
 static void send_sigurg_to_task(struct task_struct *p,
@@ -812,10 +817,9 @@ int send_sigurg(struct fown_struct *fown)
 	struct task_struct *p;
 	enum pid_type type;
 	struct pid *pid;
-	unsigned long flags;
 	int ret = 0;
 	
-	read_lock_irqsave(&fown->lock, flags);
+	read_lock(&fown->lock);
 
 	type = fown->pid_type;
 	pid = fown->pid;
@@ -838,7 +842,7 @@ int send_sigurg(struct fown_struct *fown)
 		read_unlock(&tasklist_lock);
 	}
  out_unlock_fown:
-	read_unlock_irqrestore(&fown->lock, flags);
+	read_unlock(&fown->lock);
 	return ret;
 }
 
@@ -987,14 +991,13 @@ static void kill_fasync_rcu(struct fasync_struct *fa, int sig, int band)
 {
 	while (fa) {
 		struct fown_struct *fown;
-		unsigned long flags;
 
 		if (fa->magic != FASYNC_MAGIC) {
 			printk(KERN_ERR "kill_fasync: bad magic number in "
 			       "fasync_struct!\n");
 			return;
 		}
-		read_lock_irqsave(&fa->fa_lock, flags);
+		read_lock(&fa->fa_lock);
 		if (fa->fa_file) {
 			fown = &fa->fa_file->f_owner;
 			/* Don't send SIGURG to processes which have not set a
@@ -1003,7 +1006,7 @@ static void kill_fasync_rcu(struct fasync_struct *fa, int sig, int band)
 			if (!(sig == SIGURG && fown->signum == 0))
 				send_sigio(fown, fa->fa_fd, band);
 		}
-		read_unlock_irqrestore(&fa->fa_lock, flags);
+		read_unlock(&fa->fa_lock);
 		fa = rcu_dereference(fa->fa_next);
 	}
 }

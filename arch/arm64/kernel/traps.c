@@ -249,7 +249,7 @@ void die(const char *str, struct pt_regs *regs, int err)
 	raw_spin_unlock_irqrestore(&die_lock, flags);
 
 	if (ret != NOTIFY_STOP)
-		make_task_dead(SIGSEGV);
+		do_exit(SIGSEGV);
 }
 
 static bool show_unhandled_signals_ratelimited(void)
@@ -340,7 +340,7 @@ static int call_undef_hook(struct pt_regs *regs)
 
 	if (!user_mode(regs)) {
 		__le32 instr_le;
-		if (get_kernel_nofault(instr_le, (__force __le32 *)pc))
+		if (probe_kernel_address((__force __le32 *)pc, instr_le))
 			goto exit;
 		instr = le32_to_cpu(instr_le);
 	} else if (compat_thumb_mode(regs)) {
@@ -417,12 +417,12 @@ void arm64_notify_segfault(unsigned long addr)
 {
 	int code;
 
-	mmap_read_lock(current->mm);
+	down_read(&current->mm->mmap_sem);
 	if (find_vma(current->mm, addr) == NULL)
 		code = SEGV_MAPERR;
 	else
 		code = SEGV_ACCERR;
-	mmap_read_unlock(current->mm);
+	up_read(&current->mm->mmap_sem);
 
 	force_signal_inject(SIGSEGV, code, addr);
 }

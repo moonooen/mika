@@ -25,7 +25,7 @@
 #include <linux/moduleparam.h>
 
 #include <asm/pgalloc.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <asm/tlb.h>
 #include <asm/xen/hypervisor.h>
 #include <asm/xen/hypercall.h>
@@ -277,7 +277,7 @@ static long privcmd_ioctl_mmap(struct file *file, void __user *udata)
 	if (rc || list_empty(&pagelist))
 		goto out;
 
-	mmap_write_lock(mm);
+	down_write(&mm->mmap_sem);
 
 	{
 		struct page *page = list_first_entry(&pagelist,
@@ -302,7 +302,7 @@ static long privcmd_ioctl_mmap(struct file *file, void __user *udata)
 
 
 out_up:
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 
 out:
 	free_page_list(&pagelist);
@@ -498,7 +498,7 @@ static long privcmd_ioctl_mmap_batch(
 		}
 	}
 
-	mmap_write_lock(mm);
+	down_write(&mm->mmap_sem);
 
 	vma = find_vma(mm, m.addr);
 	if (!vma ||
@@ -554,7 +554,7 @@ static long privcmd_ioctl_mmap_batch(
 	BUG_ON(traverse_pages_block(m.num, sizeof(xen_pfn_t),
 				    &pagelist, mmap_batch_fn, &state));
 
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 
 	if (state.global_error) {
 		/* Write back errors in second pass. */
@@ -575,7 +575,7 @@ out:
 	return ret;
 
 out_unlock:
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 	goto out;
 }
 
@@ -743,15 +743,14 @@ static int remap_pfn_fn(pte_t *ptep, pgtable_t token, unsigned long addr,
 	return 0;
 }
 
-static long privcmd_ioctl_mmap_resource(struct file *file,
-				struct privcmd_mmap_resource __user *udata)
+static long privcmd_ioctl_mmap_resource(struct file *file, void __user *udata)
 {
 	struct privcmd_data *data = file->private_data;
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
 	struct privcmd_mmap_resource kdata;
 	xen_pfn_t *pfns = NULL;
-	struct xen_mem_acquire_resource xdata = { };
+	struct xen_mem_acquire_resource xdata;
 	int rc;
 
 	if (copy_from_user(&kdata, udata, sizeof(kdata)))
@@ -761,23 +760,7 @@ static long privcmd_ioctl_mmap_resource(struct file *file,
 	if (data->domid != DOMID_INVALID && data->domid != kdata.dom)
 		return -EPERM;
 
-	/* Both fields must be set or unset */
-	if (!!kdata.addr != !!kdata.num)
-		return -EINVAL;
-
-	xdata.domid = kdata.dom;
-	xdata.type = kdata.type;
-	xdata.id = kdata.id;
-
-	if (!kdata.addr && !kdata.num) {
-		/* Query the size of the resource. */
-		rc = HYPERVISOR_memory_op(XENMEM_acquire_resource, &xdata);
-		if (rc)
-			return rc;
-		return __put_user(xdata.nr_frames, &udata->num);
-	}
-
-	mmap_write_lock(mm);
+	down_write(&mm->mmap_sem);
 
 	vma = find_vma(mm, kdata.addr);
 	if (!vma || vma->vm_ops != &privcmd_vm_ops) {
@@ -785,7 +768,7 @@ static long privcmd_ioctl_mmap_resource(struct file *file,
 		goto out;
 	}
 
-	pfns = kcalloc(kdata.num, sizeof(*pfns), GFP_KERNEL | __GFP_NOWARN);
+	pfns = kcalloc(kdata.num, sizeof(*pfns), GFP_KERNEL);
 	if (!pfns) {
 		rc = -ENOMEM;
 		goto out;
@@ -810,6 +793,10 @@ static long privcmd_ioctl_mmap_resource(struct file *file,
 	} else
 		vma->vm_private_data = PRIV_VMA_LOCKED;
 
+	memset(&xdata, 0, sizeof(xdata));
+	xdata.domid = kdata.dom;
+	xdata.type = kdata.type;
+	xdata.id = kdata.id;
 	xdata.frame = kdata.idx;
 	xdata.nr_frames = kdata.num;
 	set_xen_guest_handle(xdata.frame_list, pfns);
@@ -835,12 +822,11 @@ static long privcmd_ioctl_mmap_resource(struct file *file,
 		unsigned int domid =
 			(xdata.flags & XENMEM_rsrc_acq_caller_owned) ?
 			DOMID_SELF : kdata.dom;
-		int num, *errs = (int *)pfns;
+		int num;
 
-		BUILD_BUG_ON(sizeof(*errs) > sizeof(*pfns));
 		num = xen_remap_domain_mfn_array(vma,
 						 kdata.addr & PAGE_MASK,
-						 pfns, kdata.num, errs,
+						 pfns, kdata.num, (int *)pfns,
 						 vma->vm_page_prot,
 						 domid,
 						 vma->vm_private_data);
@@ -850,7 +836,7 @@ static long privcmd_ioctl_mmap_resource(struct file *file,
 			unsigned int i;
 
 			for (i = 0; i < num; i++) {
-				rc = errs[i];
+				rc = pfns[i];
 				if (rc < 0)
 					break;
 			}
@@ -859,7 +845,7 @@ static long privcmd_ioctl_mmap_resource(struct file *file,
 	}
 
 out:
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 	kfree(pfns);
 
 	return rc;

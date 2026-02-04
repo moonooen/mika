@@ -16,7 +16,7 @@
 #include <asm/asm-offsets.h>
 #include <asm/hwcap.h>
 #include <asm/pgtable-hwdef.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <asm/memory.h>
 #include <asm/cache.h>
 
@@ -638,7 +638,7 @@ __v7_setup_stack:
 	string	cpu_elf_name, "v7"
 	.align
 
-	.section ".proc.info.init", "a"
+	.section ".proc.info.init", #alloc
 
 	/*
 	 * Standard v7 proc info content

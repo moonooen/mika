@@ -1,6 +1,7 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * OF helpers for network devices.
+ *
+ * This file is released under the GPLv2
  */
 
 #ifndef __LINUX_OF_NET_H

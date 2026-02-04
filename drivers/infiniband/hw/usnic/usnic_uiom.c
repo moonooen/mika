@@ -59,9 +59,9 @@ static void usnic_uiom_reg_account(struct work_struct *work)
 	struct usnic_uiom_reg *umem = container_of(work,
 						struct usnic_uiom_reg, work);
 
-	mmap_write_lock(umem->mm);
+	down_write(&umem->mm->mmap_sem);
 	umem->mm->locked_vm -= umem->diff;
-	mmap_write_unlock(umem->mm);
+	up_write(&umem->mm->mmap_sem);
 	mmput(umem->mm);
 	kfree(umem);
 }
@@ -136,7 +136,7 @@ static int usnic_uiom_get_pages(unsigned long addr, size_t size, int writable,
 
 	npages = PAGE_ALIGN(size + (addr & ~PAGE_MASK)) >> PAGE_SHIFT;
 
-	mmap_write_lock(current->mm);
+	down_write(&current->mm->mmap_sem);
 
 	locked = npages + current->mm->pinned_vm;
 	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
@@ -199,7 +199,7 @@ out:
 	else
 		current->mm->pinned_vm = locked;
 
-	mmap_write_unlock(current->mm);
+	up_write(&current->mm->mmap_sem);
 	free_page((unsigned long) page_list);
 	return ret;
 }
@@ -459,7 +459,7 @@ void usnic_uiom_reg_release(struct usnic_uiom_reg *uiomr,
 	 * we defer the vm_locked accounting to the system workqueue.
 	 */
 	if (ucontext->closing) {
-		if (!mmap_write_trylock(mm)) {
+		if (!down_write_trylock(&mm->mmap_sem)) {
 			INIT_WORK(&uiomr->work, usnic_uiom_reg_account);
 			uiomr->mm = mm;
 			uiomr->diff = diff;
@@ -468,10 +468,10 @@ void usnic_uiom_reg_release(struct usnic_uiom_reg *uiomr,
 			return;
 		}
 	} else
-		mmap_write_lock(mm);
+		down_write(&mm->mmap_sem);
 
 	mm->pinned_vm -= diff;
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 	mmput(mm);
 out:
 	kfree(uiomr);

@@ -46,7 +46,6 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <crypto/hash.h>
-#include <crypto/algapi.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/ip.h>
@@ -1774,7 +1773,7 @@ struct sctp_association *sctp_unpack_cookie(
 		}
 	}
 
-	if (crypto_memneq(digest, cookie->signature, SCTP_SIGNATURE_SIZE)) {
+	if (memcmp(digest, cookie->signature, SCTP_SIGNATURE_SIZE)) {
 		*error = -SCTP_IERROR_BAD_SIG;
 		goto fail;
 	}
@@ -2174,7 +2173,7 @@ static enum sctp_ierror sctp_verify_param(struct net *net,
 
 	case SCTP_PARAM_SET_PRIMARY:
 		if (!net->sctp.addip_enable)
-			goto unhandled;
+			goto fallthrough;
 
 		if (ntohs(param.p->length) < sizeof(struct sctp_addip_param) +
 					     sizeof(struct sctp_paramhdr)) {
@@ -2193,11 +2192,11 @@ static enum sctp_ierror sctp_verify_param(struct net *net,
 	case SCTP_PARAM_FWD_TSN_SUPPORT:
 		if (ep->prsctp_enable)
 			break;
-		goto unhandled;
+		goto fallthrough;
 
 	case SCTP_PARAM_RANDOM:
 		if (!ep->auth_enable)
-			goto unhandled;
+			goto fallthrough;
 
 		/* SCTP-AUTH: Secion 6.1
 		 * If the random number is not 32 byte long the association
@@ -2214,7 +2213,7 @@ static enum sctp_ierror sctp_verify_param(struct net *net,
 
 	case SCTP_PARAM_CHUNKS:
 		if (!ep->auth_enable)
-			goto unhandled;
+			goto fallthrough;
 
 		/* SCTP-AUTH: Section 3.2
 		 * The CHUNKS parameter MUST be included once in the INIT or
@@ -2230,7 +2229,7 @@ static enum sctp_ierror sctp_verify_param(struct net *net,
 
 	case SCTP_PARAM_HMAC_ALGO:
 		if (!ep->auth_enable)
-			goto unhandled;
+			goto fallthrough;
 
 		hmacs = (struct sctp_hmac_algo_param *)param.p;
 		n_elt = (ntohs(param.p->length) -
@@ -2253,7 +2252,7 @@ static enum sctp_ierror sctp_verify_param(struct net *net,
 			retval = SCTP_IERROR_ABORT;
 		}
 		break;
-unhandled:
+fallthrough:
 	default:
 		pr_debug("%s: unrecognized param:%d for chunk:%d\n",
 			 __func__, ntohs(param.p->type), cid);
@@ -3158,7 +3157,7 @@ static __be16 sctp_process_asconf_param(struct sctp_association *asoc,
 		 * primary.
 		 */
 		if (af->is_any(&addr))
-			memcpy(&addr, sctp_source(asconf), sizeof(addr));
+			memcpy(&addr.v4, sctp_source(asconf), sizeof(addr));
 
 		if (security_sctp_bind_connect(asoc->ep->base.sk,
 					       SCTP_PARAM_SET_PRIMARY,
@@ -3228,7 +3227,7 @@ bool sctp_verify_asconf(const struct sctp_association *asoc,
 				return false;
 			break;
 		default:
-			/* This is unknown to us, reject! */
+			/* This is unkown to us, reject! */
 			return false;
 		}
 	}
@@ -3674,7 +3673,7 @@ struct sctp_chunk *sctp_make_strreset_req(
 	outlen = (sizeof(outreq) + stream_len) * out;
 	inlen = (sizeof(inreq) + stream_len) * in;
 
-	retval = sctp_make_reconf(asoc, SCTP_PAD4(outlen) + SCTP_PAD4(inlen));
+	retval = sctp_make_reconf(asoc, outlen + inlen);
 	if (!retval)
 		return NULL;
 

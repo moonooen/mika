@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * kref.h - library routines for handling generic reference counted objects
  *
@@ -8,6 +7,9 @@
  * based on kobject.h which was:
  * Copyright (C) 2002-2003 Patrick Mochel <mochel@osdl.org>
  * Copyright (C) 2002-2003 Open Source Development Labs
+ *
+ * This file is released under the GPLv2.
+ *
  */
 
 #ifndef _KREF_H_

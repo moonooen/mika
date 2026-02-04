@@ -63,8 +63,6 @@ COND_SYSCALL(epoll_create1);
 COND_SYSCALL(epoll_ctl);
 COND_SYSCALL(epoll_pwait);
 COND_SYSCALL_COMPAT(epoll_pwait);
-COND_SYSCALL(epoll_pwait2);
-COND_SYSCALL_COMPAT(epoll_pwait2);
 
 /* fs/fcntl.c */
 
@@ -257,7 +255,6 @@ COND_SYSCALL_COMPAT(keyctl);
 
 /* mm/fadvise.c */
 COND_SYSCALL(fadvise64_64);
-COND_SYSCALL_COMPAT(fadvise64_64);
 
 /* mm/, CONFIG_MMU only */
 COND_SYSCALL(swapon);

@@ -15,7 +15,7 @@
 #include <linux/hugetlb.h>
 #include <linux/syscalls.h>
 
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <linux/uaccess.h>
 
 /*
@@ -99,7 +99,7 @@ static void subpage_prot_clear(unsigned long addr, unsigned long len)
 	size_t nw;
 	unsigned long next, limit;
 
-	mmap_write_lock(mm);
+	down_write(&mm->mmap_sem);
 	limit = addr + len;
 	if (limit > spt->maxaddr)
 		limit = spt->maxaddr;
@@ -127,7 +127,7 @@ static void subpage_prot_clear(unsigned long addr, unsigned long len)
 		/* now flush any existing HPTEs for the range */
 		hpte_flush_range(mm, addr, nw);
 	}
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 }
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
@@ -217,7 +217,7 @@ SYSCALL_DEFINE3(subpage_prot, unsigned long, addr,
 	if (!access_ok(VERIFY_READ, map, (len >> PAGE_SHIFT) * sizeof(u32)))
 		return -EFAULT;
 
-	mmap_write_lock(mm);
+	down_write(&mm->mmap_sem);
 	subpage_mark_vma_nohuge(mm, addr, len);
 	for (limit = addr + len; addr < limit; addr = next) {
 		next = pmd_addr_end(addr, limit);
@@ -252,11 +252,11 @@ SYSCALL_DEFINE3(subpage_prot, unsigned long, addr,
 		if (addr + (nw << PAGE_SHIFT) > next)
 			nw = (next - addr) >> PAGE_SHIFT;
 
-		mmap_write_unlock(mm);
+		up_write(&mm->mmap_sem);
 		if (__copy_from_user(spp, map, nw * sizeof(u32)))
 			return -EFAULT;
 		map += nw;
-		mmap_write_lock(mm);
+		down_write(&mm->mmap_sem);
 
 		/* now flush any existing HPTEs for the range */
 		hpte_flush_range(mm, addr, nw);
@@ -265,6 +265,6 @@ SYSCALL_DEFINE3(subpage_prot, unsigned long, addr,
 		spt->maxaddr = limit;
 	err = 0;
  out:
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 	return err;
 }

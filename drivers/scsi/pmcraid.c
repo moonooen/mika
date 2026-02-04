@@ -3999,7 +3999,9 @@ static const struct file_operations pmcraid_fops = {
 	.open = pmcraid_chr_open,
 	.fasync = pmcraid_chr_fasync,
 	.unlocked_ioctl = pmcraid_chr_ioctl,
-	.compat_ioctl = compat_ptr_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = pmcraid_chr_ioctl,
+#endif
 	.llseek = noop_llseek,
 };
 
@@ -4557,7 +4559,7 @@ pmcraid_register_interrupt_handler(struct pmcraid_instance *pinstance)
 	return 0;
 
 out_unwind:
-	while (--i >= 0)
+	while (--i > 0)
 		free_irq(pci_irq_vector(pdev, i), &pinstance->hrrq_vector[i]);
 	pci_free_irq_vectors(pdev);
 	return rc;

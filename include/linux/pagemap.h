@@ -51,10 +51,7 @@ static inline void mapping_set_error(struct address_space *mapping, int error)
 		return;
 
 	/* Record in wb_err for checkers using errseq_t based tracking */
-	__filemap_set_wb_err(mapping, error);
-
-	/* Record it in superblock */
-	errseq_set(&mapping->host->i_sb->s_wb_err, error);
+	filemap_set_wb_err(mapping, error);
 
 	/* Record it in flags for now, for legacy callers */
 	if (error == -ENOSPC)
@@ -221,43 +218,6 @@ static inline int page_cache_add_speculative(struct page *page, int count)
 	VM_BUG_ON_PAGE(PageCompound(page) && page != compound_head(page), page);
 
 	return 1;
-}
-
-/**
- * attach_page_private - Attach private data to a page.
- * @page: Page to attach data to.
- * @data: Data to attach to page.
- *
- * Attaching private data to a page increments the page's reference count.
- * The data must be detached before the page will be freed.
- */
-static inline void attach_page_private(struct page *page, void *data)
-{
-	get_page(page);
-	set_page_private(page, (unsigned long)data);
-	SetPagePrivate(page);
-}
-
-/**
- * detach_page_private - Detach private data from a page.
- * @page: Page to detach data from.
- *
- * Removes the data that was previously attached to the page and decrements
- * the refcount on the page.
- *
- * Return: Data that was attached to the page.
- */
-static inline void *detach_page_private(struct page *page)
-{
-	void *data = (void *)page_private(page);
-
-	if (!PagePrivate(page))
-		return NULL;
-	ClearPagePrivate(page);
-	set_page_private(page, 0);
-	put_page(page);
-
-	return data;
 }
 
 #ifdef CONFIG_NUMA
@@ -443,7 +403,7 @@ static inline struct page *read_mapping_page(struct address_space *mapping,
 }
 
 /*
- * Get index of the page within radix-tree (but not for hugetlb pages).
+ * Get index of the page with in radix-tree
  * (TODO: remove once hugetlb pages will have ->index in PAGE_SIZE)
  */
 static inline pgoff_t page_to_index(struct page *page)
@@ -462,16 +422,15 @@ static inline pgoff_t page_to_index(struct page *page)
 	return pgoff;
 }
 
-extern pgoff_t hugetlb_basepage_index(struct page *page);
-
 /*
- * Get the offset in PAGE_SIZE (even for hugetlb pages).
- * (TODO: hugetlb pages should have ->index in PAGE_SIZE)
+ * Get the offset in PAGE_SIZE.
+ * (TODO: hugepage should have ->index in PAGE_SIZE)
  */
 static inline pgoff_t page_to_pgoff(struct page *page)
 {
-	if (unlikely(PageHuge(page)))
-		return hugetlb_basepage_index(page);
+	if (unlikely(PageHeadHuge(page)))
+		return page->index << compound_order(page);
+
 	return page_to_index(page);
 }
 
@@ -497,8 +456,8 @@ static inline pgoff_t linear_page_index(struct vm_area_struct *vma,
 	pgoff_t pgoff;
 	if (unlikely(is_vm_hugetlb_page(vma)))
 		return linear_hugepage_index(vma, address);
-	pgoff = (address - vma->vm_start) >> PAGE_SHIFT;
-	pgoff += vma->vm_pgoff;
+	pgoff = (address - READ_ONCE(vma->vm_start)) >> PAGE_SHIFT;
+	pgoff += READ_ONCE(vma->vm_pgoff);
 	return pgoff;
 }
 

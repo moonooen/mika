@@ -15,7 +15,7 @@
 #include <linux/ctype.h>
 #include <linux/security.h>
 #include <linux/vmalloc.h>
-#include <linux/init.h>
+#include <linux/module.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/mount.h>
@@ -23,7 +23,6 @@
 #include <linux/capability.h>
 #include <linux/rcupdate.h>
 #include <linux/fs.h>
-#include <linux/fs_context.h>
 #include <linux/poll.h>
 #include <uapi/linux/major.h>
 #include <uapi/linux/magic.h>
@@ -143,7 +142,7 @@ static const struct super_operations aafs_super_ops = {
 	.show_path = aafs_show_path,
 };
 
-static int apparmorfs_fill_super(struct super_block *sb, struct fs_context *fc)
+static int fill_super(struct super_block *sb, void *data, int silent)
 {
 	static struct tree_descr files[] = { {""} };
 	int error;
@@ -156,25 +155,16 @@ static int apparmorfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	return 0;
 }
 
-static int apparmorfs_get_tree(struct fs_context *fc)
+static struct dentry *aafs_mount(struct file_system_type *fs_type,
+				 int flags, const char *dev_name, void *data)
 {
-	return get_tree_single(fc, apparmorfs_fill_super);
-}
-
-static const struct fs_context_operations apparmorfs_context_ops = {
-	.get_tree	= apparmorfs_get_tree,
-};
-
-static int apparmorfs_init_fs_context(struct fs_context *fc)
-{
-	fc->ops = &apparmorfs_context_ops;
-	return 0;
+	return mount_single(fs_type, flags, data, fill_super);
 }
 
 static struct file_system_type aafs_ops = {
 	.owner = THIS_MODULE,
 	.name = AAFS_NAME,
-	.init_fs_context = apparmorfs_init_fs_context,
+	.mount = aafs_mount,
 	.kill_sb = kill_anon_super,
 };
 
@@ -413,7 +403,7 @@ static struct aa_loaddata *aa_simple_write_to_buffer(const char __user *userbuf,
 
 	data->size = copy_size;
 	if (copy_from_user(data->data, userbuf, copy_size)) {
-		aa_put_loaddata(data);
+		kvfree(data);
 		return ERR_PTR(-EFAULT);
 	}
 
@@ -879,10 +869,8 @@ static struct multi_transaction *multi_transaction_new(struct file *file,
 	if (!t)
 		return ERR_PTR(-ENOMEM);
 	kref_init(&t->count);
-	if (copy_from_user(t->data, buf, size)) {
-		put_multi_transaction(t);
+	if (copy_from_user(t->data, buf, size))
 		return ERR_PTR(-EFAULT);
-	}
 
 	return t;
 }
@@ -1603,10 +1591,6 @@ int __aafs_profile_mkdir(struct aa_profile *profile, struct dentry *parent)
 		struct aa_profile *p;
 		p = aa_deref_parent(profile);
 		dent = prof_dir(p);
-		if (!dent) {
-			error = -ENOENT;
-			goto fail2;
-		}
 		/* adding to parent that previously didn't have children */
 		dent = aafs_create_dir("profiles", dent);
 		if (IS_ERR(dent))
@@ -1975,6 +1959,9 @@ fail2:
 
 	return error;
 }
+
+
+#define list_entry_is_head(pos, head, member) (&pos->member == (head))
 
 /**
  * __next_ns - find the next namespace to list

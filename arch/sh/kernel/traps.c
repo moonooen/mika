@@ -57,7 +57,7 @@ void die(const char *str, struct pt_regs *regs, long err)
 	if (panic_on_oops)
 		panic("Fatal exception");
 
-	make_task_dead(SIGSEGV);
+	do_exit(SIGSEGV);
 }
 
 void die_if_kernel(const char *str, struct pt_regs *regs, long err)
@@ -118,7 +118,7 @@ int is_valid_bugaddr(unsigned long addr)
 
 	if (addr < PAGE_OFFSET)
 		return 0;
-	if (get_kernel_nofault(opcode, (insn_size_t *)addr))
+	if (probe_kernel_address((insn_size_t *)addr, opcode))
 		return 0;
 	if (opcode == TRAPA_BUG_OPCODE)
 		return 1;

@@ -42,8 +42,7 @@ extern void paging_init(void);
  * ZERO_PAGE is a global shared page that is always zero: used
  * for zero-mapped memory areas etc..
  */
-extern void *empty_zero_page;
-#define ZERO_PAGE(vaddr)	(virt_to_page(empty_zero_page))
+#define ZERO_PAGE(vaddr)	(virt_to_page(0))
 
 /*
  * No page table caches to initialise.
@@ -59,6 +58,7 @@ extern void *empty_zero_page;
 #define	KMAP_START	0
 #define	KMAP_END	0xffffffff
 
+#include <asm-generic/pgtable.h>
 
 #define check_pgt_cache()	do { } while (0)
 

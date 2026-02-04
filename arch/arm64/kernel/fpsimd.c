@@ -307,7 +307,8 @@ static unsigned int find_supported_vector_length(unsigned int vl)
 #if defined(CONFIG_ARM64_SVE) && defined(CONFIG_SYSCTL)
 
 static int sve_proc_do_default_vl(struct ctl_table *table, int write,
-				  void *buffer, size_t *lenp, loff_t *ppos)
+				  void __user *buffer, size_t *lenp,
+				  loff_t *ppos)
 {
 	int ret;
 	int vl = sve_default_vl;
@@ -433,7 +434,7 @@ size_t sve_state_size(struct task_struct const *task)
 void sve_alloc(struct task_struct *task)
 {
 	if (task->thread.sve_state) {
-		memset(task->thread.sve_state, 0, sve_state_size(task));
+		memset(task->thread.sve_state, 0, sve_state_size(current));
 		return;
 	}
 

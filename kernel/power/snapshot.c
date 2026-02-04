@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/kernel/power/snapshot.c
  *
@@ -6,6 +5,9 @@
  *
  * Copyright (C) 1998-2005 Pavel Machek <pavel@ucw.cz>
  * Copyright (C) 2006 Rafael J. Wysocki <rjw@sisk.pl>
+ *
+ * This file is released under the GPLv2.
+ *
  */
 
 #define pr_fmt(fmt) "PM: " fmt
@@ -34,7 +36,7 @@
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 #include <asm/io.h>
 
@@ -1143,24 +1145,24 @@ void free_basic_memory_bitmaps(void)
 
 void clear_free_pages(void)
 {
+#ifdef CONFIG_PAGE_POISONING_ZERO
 	struct memory_bitmap *bm = free_pages_map;
 	unsigned long pfn;
 
 	if (WARN_ON(!(free_pages_map)))
 		return;
 
-	if (IS_ENABLED(CONFIG_PAGE_POISONING_ZERO) || want_init_on_free()) {
-		memory_bm_position_reset(bm);
-		pfn = memory_bm_next_pfn(bm);
-		while (pfn != BM_END_OF_MAP) {
-			if (pfn_valid(pfn))
-				clear_highpage(pfn_to_page(pfn));
+	memory_bm_position_reset(bm);
+	pfn = memory_bm_next_pfn(bm);
+	while (pfn != BM_END_OF_MAP) {
+		if (pfn_valid(pfn))
+			clear_highpage(pfn_to_page(pfn));
 
-			pfn = memory_bm_next_pfn(bm);
-		}
-		memory_bm_position_reset(bm);
-		pr_info("free pages cleared after restore\n");
+		pfn = memory_bm_next_pfn(bm);
 	}
+	memory_bm_position_reset(bm);
+	pr_info("free pages cleared after restore\n");
+#endif /* PAGE_POISONING_ZERO */
 }
 
 /**
@@ -2374,9 +2376,8 @@ static void *get_highmem_page_buffer(struct page *page,
 		pbe->copy_page = tmp;
 	} else {
 		/* Copy of the page will be stored in normal memory */
-		kaddr = __get_safe_page(ca->gfp_mask);
-		if (!kaddr)
-			return ERR_PTR(-ENOMEM);
+		kaddr = safe_pages_list;
+		safe_pages_list = safe_pages_list->next;
 		pbe->copy_page = virt_to_page(kaddr);
 	}
 	pbe->next = highmem_pblist;
@@ -2556,9 +2557,8 @@ static void *get_buffer(struct memory_bitmap *bm, struct chain_allocator *ca)
 		return ERR_PTR(-ENOMEM);
 	}
 	pbe->orig_address = page_address(page);
-	pbe->address = __get_safe_page(ca->gfp_mask);
-	if (!pbe->address)
-		return ERR_PTR(-ENOMEM);
+	pbe->address = safe_pages_list;
+	safe_pages_list = safe_pages_list->next;
 	pbe->next = restore_pblist;
 	restore_pblist = pbe;
 	return pbe->address;
@@ -2588,6 +2588,8 @@ int snapshot_write_next(struct snapshot_handle *handle)
 	/* Check if we have already loaded the entire image */
 	if (handle->cur > 1 && handle->cur > nr_meta_pages + nr_copy_pages)
 		return 0;
+
+	handle->sync_read = 1;
 
 	if (!handle->cur) {
 		if (!buffer)
@@ -2629,6 +2631,7 @@ int snapshot_write_next(struct snapshot_handle *handle)
 			memory_bm_position_reset(&orig_bm);
 			restore_pblist = NULL;
 			handle->buffer = get_buffer(&orig_bm, &ca);
+			handle->sync_read = 0;
 			if (IS_ERR(handle->buffer))
 				return PTR_ERR(handle->buffer);
 		}
@@ -2640,8 +2643,9 @@ int snapshot_write_next(struct snapshot_handle *handle)
 		handle->buffer = get_buffer(&orig_bm, &ca);
 		if (IS_ERR(handle->buffer))
 			return PTR_ERR(handle->buffer);
+		if (handle->buffer != buffer)
+			handle->sync_read = 0;
 	}
-	handle->sync_read = (handle->buffer == buffer);
 	handle->cur++;
 	return PAGE_SIZE;
 }

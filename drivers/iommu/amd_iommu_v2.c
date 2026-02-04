@@ -522,7 +522,7 @@ static void do_fault(struct work_struct *work)
 		flags |= FAULT_FLAG_WRITE;
 	flags |= FAULT_FLAG_REMOTE;
 
-	mmap_read_lock(mm);
+	down_read(&mm->mmap_sem);
 	vma = find_extend_vma(mm, address);
 	if (!vma || address < vma->vm_start)
 		/* failed to get a vma in the right range */
@@ -534,7 +534,7 @@ static void do_fault(struct work_struct *work)
 
 	ret = handle_mm_fault(vma, address, flags);
 out:
-	mmap_read_unlock(mm);
+	up_read(&mm->mmap_sem);
 
 	if (ret & VM_FAULT_ERROR)
 		/* failed to service fault */
@@ -626,7 +626,6 @@ out_drop_state:
 	put_device_state(dev_state);
 
 out:
-	pci_dev_put(pdev);
 	return ret;
 }
 

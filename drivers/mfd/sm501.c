@@ -922,7 +922,7 @@ static void sm501_gpio_set(struct gpio_chip *chip, unsigned offset, int value)
 {
 	struct sm501_gpio_chip *smchip = gpiochip_get_data(chip);
 	struct sm501_gpio *smgpio = smchip->ourgpio;
-	unsigned long bit = BIT(offset);
+	unsigned long bit = 1 << offset;
 	void __iomem *regs = smchip->regbase;
 	unsigned long save;
 	unsigned long val;
@@ -948,7 +948,7 @@ static int sm501_gpio_input(struct gpio_chip *chip, unsigned offset)
 	struct sm501_gpio_chip *smchip = gpiochip_get_data(chip);
 	struct sm501_gpio *smgpio = smchip->ourgpio;
 	void __iomem *regs = smchip->regbase;
-	unsigned long bit = BIT(offset);
+	unsigned long bit = 1 << offset;
 	unsigned long save;
 	unsigned long ddr;
 
@@ -973,7 +973,7 @@ static int sm501_gpio_output(struct gpio_chip *chip,
 {
 	struct sm501_gpio_chip *smchip = gpiochip_get_data(chip);
 	struct sm501_gpio *smgpio = smchip->ourgpio;
-	unsigned long bit = BIT(offset);
+	unsigned long bit = 1 << offset;
 	void __iomem *regs = smchip->regbase;
 	unsigned long save;
 	unsigned long val;
@@ -1738,12 +1738,7 @@ static struct platform_driver sm501_plat_driver = {
 
 static int __init sm501_base_init(void)
 {
-	int ret;
-
-	ret = platform_driver_register(&sm501_plat_driver);
-	if (ret < 0)
-		return ret;
-
+	platform_driver_register(&sm501_plat_driver);
 	return pci_register_driver(&sm501_pci_driver);
 }
 

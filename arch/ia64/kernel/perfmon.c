@@ -38,7 +38,6 @@
 #include <linux/smp.h>
 #include <linux/pagemap.h>
 #include <linux/mount.h>
-#include <linux/pseudo_fs.h>
 #include <linux/bitops.h>
 #include <linux/capability.h>
 #include <linux/rcupdate.h>
@@ -611,19 +610,17 @@ pfm_unprotect_ctx_ctxsw(pfm_context_t *x, unsigned long f)
 /* forward declaration */
 static const struct dentry_operations pfmfs_dentry_operations;
 
-static int pfmfs_init_fs_context(struct fs_context *fc)
+static struct dentry *
+pfmfs_mount(struct file_system_type *fs_type, int flags, const char *dev_name, void *data)
 {
-	struct pseudo_fs_context *ctx = init_pseudo(fc, PFMFS_MAGIC);
-	if (!ctx)
-		return -ENOMEM;
-	ctx->dops = &pfmfs_dentry_operations;
-	return 0;
+	return mount_pseudo(fs_type, "pfm:", NULL, &pfmfs_dentry_operations,
+			PFMFS_MAGIC);
 }
 
 static struct file_system_type pfm_fs_type = {
-	.name			= "pfmfs",
-	.init_fs_context	= pfmfs_init_fs_context,
-	.kill_sb		= kill_anon_super,
+	.name     = "pfmfs",
+	.mount    = pfmfs_mount,
+	.kill_sb  = kill_anon_super,
 };
 MODULE_ALIAS_FS("pfmfs");
 
@@ -2308,13 +2305,13 @@ pfm_smpl_buffer_alloc(struct task_struct *task, struct file *filp, pfm_context_t
 	 * now we atomically find some area in the address space and
 	 * remap the buffer in it.
 	 */
-	mmap_write_lock(task->mm);
+	down_write(&task->mm->mmap_sem);
 
 	/* find some free area in address space, must have mmap sem held */
 	vma->vm_start = get_unmapped_area(NULL, 0, size, 0, MAP_PRIVATE|MAP_ANONYMOUS);
 	if (IS_ERR_VALUE(vma->vm_start)) {
 		DPRINT(("Cannot find unmapped area for size %ld\n", size));
-		mmap_write_unlock(task->mm);
+		up_write(&task->mm->mmap_sem);
 		goto error;
 	}
 	vma->vm_end = vma->vm_start + size;
@@ -2325,7 +2322,7 @@ pfm_smpl_buffer_alloc(struct task_struct *task, struct file *filp, pfm_context_t
 	/* can only be applied to current task, need to have the mm semaphore held when called */
 	if (pfm_remap_buffer(vma, (unsigned long)smpl_buf, vma->vm_start, size)) {
 		DPRINT(("Can't remap buffer\n"));
-		mmap_write_unlock(task->mm);
+		up_write(&task->mm->mmap_sem);
 		goto error;
 	}
 
@@ -2336,7 +2333,7 @@ pfm_smpl_buffer_alloc(struct task_struct *task, struct file *filp, pfm_context_t
 	insert_vm_struct(mm, vma);
 
 	vm_stat_account(vma->vm_mm, vma->vm_flags, vma_pages(vma));
-	mmap_write_unlock(task->mm);
+	up_write(&task->mm->mmap_sem);
 
 	/*
 	 * keep track of user level virtual address

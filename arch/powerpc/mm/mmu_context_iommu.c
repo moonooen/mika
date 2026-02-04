@@ -46,7 +46,7 @@ static long mm_iommu_adjust_locked_vm(struct mm_struct *mm,
 	if (!npages)
 		return 0;
 
-	mmap_write_lock(mm);
+	down_write(&mm->mmap_sem);
 
 	if (incr) {
 		locked = mm->locked_vm + npages;
@@ -67,7 +67,7 @@ static long mm_iommu_adjust_locked_vm(struct mm_struct *mm,
 			npages << PAGE_SHIFT,
 			mm->locked_vm << PAGE_SHIFT,
 			rlimit(RLIMIT_MEMLOCK));
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 
 	return ret;
 }

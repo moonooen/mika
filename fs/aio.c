@@ -42,7 +42,6 @@
 #include <linux/ramfs.h>
 #include <linux/percpu-refcount.h>
 #include <linux/mount.h>
-#include <linux/pseudo_fs.h>
 
 #include <asm/kmap_types.h>
 #include <linux/uaccess.h>
@@ -246,12 +245,15 @@ static struct file *aio_private_file(struct kioctx *ctx, loff_t nr_pages)
 	return file;
 }
 
-static int aio_init_fs_context(struct fs_context *fc)
+static struct dentry *aio_mount(struct file_system_type *fs_type,
+				int flags, const char *dev_name, void *data)
 {
-	if (!init_pseudo(fc, AIO_RING_MAGIC))
-		return -ENOMEM;
-	fc->s_iflags |= SB_I_NOEXEC;
-	return 0;
+	struct dentry *root = mount_pseudo(fs_type, "aio:", NULL, NULL,
+					   AIO_RING_MAGIC);
+
+	if (!IS_ERR(root))
+		root->d_sb->s_iflags |= SB_I_NOEXEC;
+	return root;
 }
 
 /* aio_setup
@@ -262,7 +264,7 @@ static int __init aio_setup(void)
 {
 	static struct file_system_type aio_fs = {
 		.name		= "aio",
-		.init_fs_context = aio_init_fs_context,
+		.mount		= aio_mount,
 		.kill_sb	= kill_anon_super,
 	};
 	aio_mnt = kern_mount(&aio_fs);
@@ -330,9 +332,6 @@ static int aio_ring_mremap(struct vm_area_struct *vma)
 	spin_lock(&mm->ioctx_lock);
 	rcu_read_lock();
 	table = rcu_dereference(mm->ioctx_table);
-	if (!table)
-		goto out_unlock;
-
 	for (i = 0; i < table->nr; i++) {
 		struct kioctx *ctx;
 
@@ -346,7 +345,6 @@ static int aio_ring_mremap(struct vm_area_struct *vma)
 		}
 	}
 
-out_unlock:
 	rcu_read_unlock();
 	spin_unlock(&mm->ioctx_lock);
 	return res;
@@ -519,7 +517,7 @@ static int aio_setup_ring(struct kioctx *ctx, unsigned int nr_events)
 	ctx->mmap_size = nr_pages * PAGE_SIZE;
 	pr_debug("attempting mmap of %lu bytes\n", ctx->mmap_size);
 
-	if (mmap_write_lock_killable(mm)) {
+	if (down_write_killable(&mm->mmap_sem)) {
 		ctx->mmap_size = 0;
 		aio_free_ring(ctx);
 		return -EINTR;
@@ -528,7 +526,7 @@ static int aio_setup_ring(struct kioctx *ctx, unsigned int nr_events)
 	ctx->mmap_base = do_mmap_pgoff(ctx->aio_ring_file, 0, ctx->mmap_size,
 				       PROT_READ | PROT_WRITE,
 				       MAP_SHARED, 0, &unused, NULL);
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 	if (IS_ERR((void *)ctx->mmap_base)) {
 		ctx->mmap_size = 0;
 		aio_free_ring(ctx);
@@ -560,23 +558,12 @@ static int aio_setup_ring(struct kioctx *ctx, unsigned int nr_events)
 
 void kiocb_set_cancel_fn(struct kiocb *iocb, kiocb_cancel_fn *cancel)
 {
-	struct aio_kiocb *req;
-	struct kioctx *ctx;
+	struct aio_kiocb *req = container_of(iocb, struct aio_kiocb, rw);
+	struct kioctx *ctx = req->ki_ctx;
 	unsigned long flags;
-
-	/*
-	 * kiocb didn't come from aio or is neither a read nor a write, hence
-	 * ignore it.
-	 */
-	if (!(iocb->ki_flags & IOCB_AIO_RW))
-		return;
-
-	req = container_of(iocb, struct aio_kiocb, rw);
 
 	if (WARN_ON_ONCE(!list_empty(&req->ki_list)))
 		return;
-
-	ctx = req->ki_ctx;
 
 	spin_lock_irqsave(&ctx->ctx_lock, flags);
 	list_add_tail(&req->ki_list, &ctx->active_reqs);
@@ -1455,7 +1442,7 @@ static int aio_prep_rw(struct kiocb *req, const struct iocb *iocb)
 	req->ki_complete = aio_complete_rw;
 	req->private = NULL;
 	req->ki_pos = iocb->aio_offset;
-	req->ki_flags = iocb_flags(req->ki_filp) | IOCB_AIO_RW;
+	req->ki_flags = iocb_flags(req->ki_filp);
 	if (iocb->aio_flags & IOCB_FLAG_RESFD)
 		req->ki_flags |= IOCB_EVENTFD;
 	req->ki_hint = ki_hint_validate(file_write_hint(req->ki_filp));

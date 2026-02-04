@@ -156,7 +156,7 @@ static int map_vdso(const struct vdso_image *image, unsigned long addr)
 	unsigned long text_start;
 	int ret = 0;
 
-	if (mmap_write_lock_killable(mm))
+	if (down_write_killable(&mm->mmap_sem))
 		return -EINTR;
 
 	addr = get_unmapped_area(NULL, addr,
@@ -199,7 +199,7 @@ static int map_vdso(const struct vdso_image *image, unsigned long addr)
 	}
 
 up_fail:
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 	return ret;
 }
 
@@ -228,8 +228,8 @@ static unsigned long vdso_addr(unsigned long start, unsigned len)
 
 	/* Round the lowest possible end address up to a PMD boundary. */
 	end = (start + len + PMD_SIZE - 1) & PMD_MASK;
-	if (end >= DEFAULT_MAP_WINDOW)
-		end = DEFAULT_MAP_WINDOW;
+	if (end >= TASK_SIZE_MAX)
+		end = TASK_SIZE_MAX;
 	end -= len;
 
 	if (end > start) {
@@ -261,7 +261,7 @@ int map_vdso_once(const struct vdso_image *image, unsigned long addr)
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
 
-	mmap_write_lock(mm);
+	down_write(&mm->mmap_sem);
 	/*
 	 * Check if we have already mapped vdso blob - fail to prevent
 	 * abusing from userspace install_speciall_mapping, which may
@@ -272,11 +272,11 @@ int map_vdso_once(const struct vdso_image *image, unsigned long addr)
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
 		if (vma_is_special_mapping(vma, &vdso_mapping) ||
 				vma_is_special_mapping(vma, &vvar_mapping)) {
-			mmap_write_unlock(mm);
+			up_write(&mm->mmap_sem);
 			return -EEXIST;
 		}
 	}
-	mmap_write_unlock(mm);
+	up_write(&mm->mmap_sem);
 
 	return map_vdso(image, addr);
 }
@@ -329,7 +329,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 static __init int vdso_setup(char *s)
 {
 	vdso64_enabled = simple_strtoul(s, NULL, 0);
-	return 1;
+	return 0;
 }
 __setup("vdso=", vdso_setup);
 

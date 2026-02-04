@@ -234,9 +234,8 @@ static int sd_init(struct gspca_dev *gspca_dev)
 {
 	int ret;
 	const struct ihex_binrec *rec;
-	const struct firmware *fw;
+	const struct firmware *uninitialized_var(fw);
 	u8 *firmware_buf;
-	int len;
 
 	ret = request_ihex_firmware(&fw, VICAM_FIRMWARE,
 				    &gspca_dev->dev->dev);
@@ -251,14 +250,9 @@ static int sd_init(struct gspca_dev *gspca_dev)
 		goto exit;
 	}
 	for (rec = (void *)fw->data; rec; rec = ihex_next_binrec(rec)) {
-		len = be16_to_cpu(rec->len);
-		if (len > PAGE_SIZE) {
-			ret = -EINVAL;
-			break;
-		}
-		memcpy(firmware_buf, rec->data, len);
+		memcpy(firmware_buf, rec->data, be16_to_cpu(rec->len));
 		ret = vicam_control_msg(gspca_dev, 0xff, 0, 0, firmware_buf,
-					len);
+					be16_to_cpu(rec->len));
 		if (ret < 0)
 			break;
 	}

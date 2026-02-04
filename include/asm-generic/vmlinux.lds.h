@@ -69,10 +69,10 @@
 #if defined(CONFIG_LD_DEAD_CODE_DATA_ELIMINATION) || defined(CONFIG_LTO_CLANG)
 #define TEXT_MAIN .text .text.[0-9a-zA-Z_]*
 #define TEXT_CFI_MAIN .text.[0-9a-zA-Z_]*.cfi
-#define DATA_MAIN .data .data.[0-9a-zA-Z_]* .data..L* .data..compoundliteral*
+#define DATA_MAIN .data .data.[0-9a-zA-Z_]* .data..LPBX*
 #define SDATA_MAIN .sdata .sdata.[0-9a-zA-Z_]*
-#define RODATA_MAIN .rodata .rodata.[0-9a-zA-Z_]* .rodata..L*
-#define BSS_MAIN .bss .bss.[0-9a-zA-Z_]* .bss..compoundliteral*
+#define RODATA_MAIN .rodata .rodata.[0-9a-zA-Z_]*
+#define BSS_MAIN .bss .bss.[0-9a-zA-Z_]*
 #define SBSS_MAIN .sbss .sbss.[0-9a-zA-Z_]*
 #else
 #define TEXT_MAIN .text
@@ -205,15 +205,6 @@
 #define EARLYCON_TABLE()
 #endif
 
-#ifdef CONFIG_SECURITY
-#define LSM_TABLE()	. = ALIGN(8);					\
-			__start_lsm_info = .;				\
-			KEEP(*(.lsm_info.init))				\
-			__end_lsm_info = .;
-#else
-#define LSM_TABLE()
-#endif
-
 #define ___OF_TABLE(cfg, name)	_OF_TABLE_##cfg(name)
 #define __OF_TABLE(cfg, name)	___OF_TABLE(cfg, name)
 #define OF_TABLE(cfg, name)	__OF_TABLE(IS_ENABLED(cfg), name)
@@ -253,7 +244,6 @@
 #define DATA_DATA							\
 	*(.xiptext)							\
 	*(DATA_MAIN)							\
-	*(.data..decrypted)						\
 	*(.ref.data)							\
 	*(.data..shared_aligned) /* percpu related */			\
 	MEM_KEEP(init.data*)						\
@@ -375,7 +365,7 @@
 	}								\
 									\
 	/* Built-in firmware blobs */					\
-	.builtin_fw : AT(ADDR(.builtin_fw) - LOAD_OFFSET) ALIGN(8) {	\
+	.builtin_fw        : AT(ADDR(.builtin_fw) - LOAD_OFFSET) {	\
 		__start_builtin_fw = .;					\
 		KEEP(*(.builtin_fw))					\
 		__end_builtin_fw = .;					\
@@ -477,26 +467,22 @@
 		__start___modver = .;					\
 		KEEP(*(__modver))					\
 		__stop___modver = .;					\
+		. = ALIGN((align));					\
+		__end_rodata = .;					\
 	}								\
-									\
-	BTF								\
-									\
-	. = ALIGN((align));						\
-	__end_rodata = .;
+	. = ALIGN((align));
 
 /* RODATA & RO_DATA provided for backward compatibility.
  * All archs are supposed to use RO_DATA() */
 #define RODATA          RO_DATA_SECTION(4096)
 #define RO_DATA(align)  RO_DATA_SECTION(align)
 
-/*
- * Non-instrumentable text section
- */
-#define NOINSTR_TEXT							\
-		ALIGN_FUNCTION();					\
-		__noinstr_text_start = .;				\
-		*(.noinstr.text)					\
-		__noinstr_text_end = .;
+#define SECURITY_INIT							\
+	.security_initcall.init : AT(ADDR(.security_initcall.init) - LOAD_OFFSET) { \
+		__security_initcall_start = .;				\
+		KEEP(*(.security_initcall.init))			\
+		__security_initcall_end = .;				\
+	}
 
 /*
  * .text section. Map to function alignment to avoid address changes
@@ -508,16 +494,11 @@
  */
 #define TEXT_TEXT							\
 		ALIGN_FUNCTION();					\
-		*(.text.hot .text.hot.*)				\
-		*(TEXT_MAIN .text.fixup)				\
-		*(.text.unlikely .text.unlikely.*)			\
-		*(.text.unknown .text.unknown.*)			\
+		*(.text.hot TEXT_MAIN .text.fixup .text.unlikely)	\
 		*(TEXT_CFI_MAIN) 					\
-		NOINSTR_TEXT						\
 		*(.text..refcount)					\
 		*(.text..ftrace)					\
 		*(.ref.text)						\
-		*(.text.asan.* .text.tsan.*)				\
 	MEM_KEEP(init.text*)						\
 	MEM_KEEP(exit.text*)						\
 
@@ -588,24 +569,6 @@
 	}
 
 /*
- * .BTF
- */
-#ifdef CONFIG_DEBUG_INFO_BTF
-#define BTF								\
-	.BTF : AT(ADDR(.BTF) - LOAD_OFFSET) {				\
-		__start_BTF = .;					\
-		*(.BTF)							\
-		__stop_BTF = .;						\
-	}								\
-	. = ALIGN(4);							\
-	.BTF_ids : AT(ADDR(.BTF_ids) - LOAD_OFFSET) {			\
-		*(.BTF_ids)						\
-	}
-#else
-#define BTF
-#endif
-
-/*
  * Init task
  */
 #define INIT_TASK_DATA_SECTION(align)					\
@@ -647,8 +610,7 @@
 	IRQCHIP_OF_MATCH_TABLE()					\
 	ACPI_PROBE_TABLE(irqchip)					\
 	ACPI_PROBE_TABLE(timer)						\
-	EARLYCON_TABLE()						\
-	LSM_TABLE()
+	EARLYCON_TABLE()
 
 #define INIT_TEXT							\
 	*(.init.text .init.text.*)					\
@@ -740,13 +702,8 @@
 		/* DWARF 4 */						\
 		.debug_types	0 : { *(.debug_types) }			\
 		/* DWARF 5 */						\
-		.debug_addr	0 : { *(.debug_addr) }			\
-		.debug_line_str	0 : { *(.debug_line_str) }		\
-		.debug_loclists	0 : { *(.debug_loclists) }		\
 		.debug_macro	0 : { *(.debug_macro) }			\
-		.debug_names	0 : { *(.debug_names) }			\
-		.debug_rnglists	0 : { *(.debug_rnglists) }		\
-		.debug_str_offsets	0 : { *(.debug_str_offsets) }
+		.debug_addr	0 : { *(.debug_addr) }
 
 		/* Stabs debugging sections.  */
 #define STABS_DEBUG							\
@@ -843,6 +800,11 @@
 		__con_initcall_start = .;				\
 		KEEP(*(.con_initcall.init))				\
 		__con_initcall_end = .;
+
+#define SECURITY_INITCALL						\
+		__security_initcall_start = .;				\
+		KEEP(*(.security_initcall.init))			\
+		__security_initcall_end = .;
 
 #ifdef CONFIG_BLK_DEV_INITRD
 #define INIT_RAM_FS							\
@@ -1010,6 +972,7 @@
 		INIT_SETUP(initsetup_align)				\
 		INIT_CALLS						\
 		CON_INITCALL						\
+		SECURITY_INITCALL					\
 		INIT_RAM_FS						\
 	}
 

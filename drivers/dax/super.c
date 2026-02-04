@@ -1,11 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright(c) 2017 Intel Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  */
 #include <linux/pagemap.h>
 #include <linux/module.h>
 #include <linux/mount.h>
-#include <linux/pseudo_fs.h>
 #include <linux/magic.h>
 #include <linux/genhd.h>
 #include <linux/pfn_t.h>
@@ -160,8 +167,6 @@ enum dax_device_flags {
 	DAXDEV_ALIVE,
 	/* gate whether dax_flush() calls the low level flush routine */
 	DAXDEV_WRITE_CACHE,
-	/* flag to check if device supports synchronous flush */
-	DAXDEV_SYNC,
 };
 
 /**
@@ -299,26 +304,6 @@ size_t dax_copy_to_iter(struct dax_device *dax_dev, pgoff_t pgoff, void *addr,
 }
 EXPORT_SYMBOL_GPL(dax_copy_to_iter);
 
-int dax_zero_page_range(struct dax_device *dax_dev, pgoff_t pgoff,
-			size_t nr_pages)
-{
-	if (!dax_alive(dax_dev))
-		return -ENXIO;
-
-	if (!dax_dev->ops->zero_page_range)
-		return -EOPNOTSUPP;
-	/*
-	 * There are no callers that want to zero more than one page as of now.
-	 * Once users are there, this check can be removed after the
-	 * device mapper code has been updated to split ranges across targets.
-	 */
-	if (nr_pages != 1)
-		return -EIO;
-
-	return dax_dev->ops->zero_page_range(dax_dev, pgoff, nr_pages);
-}
-EXPORT_SYMBOL_GPL(dax_zero_page_range);
-
 #ifdef CONFIG_ARCH_HAS_PMEM_API
 void arch_wb_cache_pmem(void *addr, size_t size);
 void dax_flush(struct dax_device *dax_dev, void *addr, size_t size)
@@ -349,18 +334,6 @@ bool dax_write_cache_enabled(struct dax_device *dax_dev)
 	return test_bit(DAXDEV_WRITE_CACHE, &dax_dev->flags);
 }
 EXPORT_SYMBOL_GPL(dax_write_cache_enabled);
-
-bool __dax_synchronous(struct dax_device *dax_dev)
-{
-	return test_bit(DAXDEV_SYNC, &dax_dev->flags);
-}
-EXPORT_SYMBOL_GPL(__dax_synchronous);
-
-void __set_dax_synchronous(struct dax_device *dax_dev)
-{
-	set_bit(DAXDEV_SYNC, &dax_dev->flags);
-}
-EXPORT_SYMBOL_GPL(__set_dax_synchronous);
 
 bool dax_alive(struct dax_device *dax_dev)
 {
@@ -444,19 +417,16 @@ static const struct super_operations dax_sops = {
 	.drop_inode = generic_delete_inode,
 };
 
-static int dax_init_fs_context(struct fs_context *fc)
+static struct dentry *dax_mount(struct file_system_type *fs_type,
+		int flags, const char *dev_name, void *data)
 {
-	struct pseudo_fs_context *ctx = init_pseudo(fc, DAXFS_MAGIC);
-	if (!ctx)
-		return -ENOMEM;
-	ctx->ops = &dax_sops;
-	return 0;
+	return mount_pseudo(fs_type, "dax:", &dax_sops, NULL, DAXFS_MAGIC);
 }
 
 static struct file_system_type dax_fs_type = {
-	.name		= "dax",
-	.init_fs_context = dax_init_fs_context,
-	.kill_sb	= kill_anon_super,
+	.name = "dax",
+	.mount = dax_mount,
+	.kill_sb = kill_anon_super,
 };
 
 static int dax_test(struct inode *inode, void *data)
@@ -518,7 +488,7 @@ static void dax_add_host(struct dax_device *dax_dev, const char *host)
 }
 
 struct dax_device *alloc_dax(void *private, const char *__host,
-		const struct dax_operations *ops, unsigned long flags)
+		const struct dax_operations *ops)
 {
 	struct dax_device *dax_dev;
 	const char *host;
@@ -541,9 +511,6 @@ struct dax_device *alloc_dax(void *private, const char *__host,
 	dax_add_host(dax_dev, host);
 	dax_dev->ops = ops;
 	dax_dev->private = private;
-	if (flags & DAXDEV_F_SYNC)
-		set_dax_synchronous(dax_dev);
-
 	return dax_dev;
 
  err_dev:

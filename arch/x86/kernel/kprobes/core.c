@@ -50,14 +50,14 @@
 #include <linux/kdebug.h>
 #include <linux/kallsyms.h>
 #include <linux/ftrace.h>
+#include <linux/frame.h>
 #include <linux/kasan.h>
 #include <linux/moduleloader.h>
-#include <linux/objtool.h>
 
 #include <asm/text-patching.h>
 #include <asm/cacheflush.h>
 #include <asm/desc.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <linux/uaccess.h>
 #include <asm/alternative.h>
 #include <asm/insn.h>
@@ -170,8 +170,6 @@ NOKPROBE_SYMBOL(skip_prefixes);
 int can_boost(struct insn *insn, void *addr)
 {
 	kprobe_opcode_t opcode;
-	insn_byte_t prefix;
-	int i;
 
 	if (search_exception_tables((unsigned long)addr))
 		return 0;	/* Page fault may occur on this address. */
@@ -184,14 +182,9 @@ int can_boost(struct insn *insn, void *addr)
 	if (insn->opcode.nbytes != 1)
 		return 0;
 
-	for_each_insn_prefix(insn, i, prefix) {
-		insn_attr_t attr;
-
-		attr = inat_get_opcode_attribute(prefix);
-		/* Can't boost Address-size override prefix and CS override prefix */
-		if (prefix == 0x2e || inat_is_address_size_prefix(attr))
-			return 0;
-	}
+	/* Can't boost Address-size override prefix */
+	if (unlikely(inat_is_address_size_prefix(insn->attr)))
+		return 0;
 
 	opcode = insn->opcode.bytes[0];
 
@@ -216,8 +209,8 @@ int can_boost(struct insn *insn, void *addr)
 		/* clear and set flags are boostable */
 		return (opcode == 0xf5 || (0xf7 < opcode && opcode < 0xfe));
 	default:
-		/* call is not boostable */
-		return opcode != 0x9a;
+		/* CS override prefix and call are not boostable */
+		return (opcode != 0x2e && opcode != 0x9a);
 	}
 }
 
@@ -225,10 +218,17 @@ static unsigned long
 __recover_probed_insn(kprobe_opcode_t *buf, unsigned long addr)
 {
 	struct kprobe *kp;
-	bool faddr;
+	unsigned long faddr;
 
 	kp = get_kprobe((void *)addr);
-	faddr = ftrace_location(addr) == addr;
+	faddr = ftrace_location(addr);
+	/*
+	 * Addresses inside the ftrace location are refused by
+	 * arch_check_ftrace_location(). Something went terribly wrong
+	 * if such an address is checked here.
+	 */
+	if (WARN_ON(faddr && faddr != addr))
+		return 0UL;
 	/*
 	 * Use the current code if it is not modified by Kprobe
 	 * and it cannot be modified by ftrace.
@@ -255,7 +255,7 @@ __recover_probed_insn(kprobe_opcode_t *buf, unsigned long addr)
 	 * Fortunately, we know that the original code is the ideal 5-byte
 	 * long NOP.
 	 */
-	if (copy_from_kernel_nofault(buf, (void *)addr,
+	if (probe_kernel_read(buf, (void *)addr,
 		MAX_INSN_SIZE * sizeof(kprobe_opcode_t)))
 		return 0UL;
 
@@ -358,8 +358,7 @@ int __copy_instruction(u8 *dest, u8 *src, u8 *real, struct insn *insn)
 		return 0;
 
 	/* This can access kernel text if given address is not recovered */
-	if (copy_from_kernel_nofault(dest, (void *)recovered_insn,
-			MAX_INSN_SIZE))
+	if (probe_kernel_read(dest, (void *)recovered_insn, MAX_INSN_SIZE))
 		return 0;
 
 	kernel_insn_init(insn, dest, MAX_INSN_SIZE);
@@ -1042,11 +1041,6 @@ int kprobe_fault_handler(struct pt_regs *regs, int trapnr)
 		 * So clear it by resetting the current kprobe:
 		 */
 		regs->flags &= ~X86_EFLAGS_TF;
-		/*
-		 * Since the single step (trap) has been cancelled,
-		 * we need to restore BTF here.
-		 */
-		restore_btf();
 
 		/*
 		 * If the TF flag was set before the kprobe hit,

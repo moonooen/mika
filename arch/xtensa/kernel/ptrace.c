@@ -29,18 +29,18 @@
 #include <asm/coprocessor.h>
 #include <asm/elf.h>
 #include <asm/page.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <asm/ptrace.h>
 
 
 void user_enable_single_step(struct task_struct *child)
 {
-	set_tsk_thread_flag(child, TIF_SINGLESTEP);
+	child->ptrace |= PT_SINGLESTEP;
 }
 
 void user_disable_single_step(struct task_struct *child)
 {
-	clear_tsk_thread_flag(child, TIF_SINGLESTEP);
+	child->ptrace &= ~PT_SINGLESTEP;
 }
 
 /*

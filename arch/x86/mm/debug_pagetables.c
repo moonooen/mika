@@ -2,7 +2,7 @@
 #include <linux/efi.h>
 #include <linux/module.h>
 #include <linux/seq_file.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 
 static int ptdump_show(struct seq_file *m, void *v)
 {
@@ -26,9 +26,9 @@ static const struct file_operations ptdump_fops = {
 static int ptdump_show_curknl(struct seq_file *m, void *v)
 {
 	if (current->mm->pgd) {
-		mmap_read_lock(current->mm);
+		down_read(&current->mm->mmap_sem);
 		ptdump_walk_pgd_level_debugfs(m, current->mm->pgd, false);
-		mmap_read_unlock(current->mm);
+		up_read(&current->mm->mmap_sem);
 	}
 	return 0;
 }
@@ -52,9 +52,9 @@ static struct dentry *pe_curusr;
 static int ptdump_show_curusr(struct seq_file *m, void *v)
 {
 	if (current->mm->pgd) {
-		mmap_read_lock(current->mm);
+		down_read(&current->mm->mmap_sem);
 		ptdump_walk_pgd_level_debugfs(m, current->mm->pgd, true);
-		mmap_read_unlock(current->mm);
+		up_read(&current->mm->mmap_sem);
 	}
 	return 0;
 }

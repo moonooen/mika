@@ -111,7 +111,6 @@ struct test_arg_end {
 
 #define TESTCASE_START(title)					\
 	__asm__ __volatile__ (					\
-	".syntax unified				\n\t"	\
 	"bl	__kprobes_test_case_start		\n\t"	\
 	".pushsection .rodata				\n\t"	\
 	"10:						\n\t"	\
@@ -457,7 +456,3 @@ void kprobe_thumb32_test_cases(void);
 #else
 void kprobe_arm_test_cases(void);
 #endif
-
-void __kprobes_test_case_start(void);
-void __kprobes_test_case_end_16(void);
-void __kprobes_test_case_end_32(void);

@@ -7,7 +7,6 @@
 #include <linux/slab.h>
 #include <linux/namei.h>
 #include <linux/ctype.h>
-#include <linux/fs_context.h>
 
 #include <linux/sunrpc/svcsock.h>
 #include <linux/lockd/lockd.h>
@@ -348,7 +347,7 @@ static ssize_t write_unlock_fs(struct file *file, char *buf, size_t size)
 static ssize_t write_filehandle(struct file *file, char *buf, size_t size)
 {
 	char *dname, *path;
-	int maxsize;
+	int uninitialized_var(maxsize);
 	char *mesg = buf;
 	int len;
 	struct auth_domain *dom;
@@ -789,10 +788,7 @@ out_close:
 		svc_xprt_put(xprt);
 	}
 out_err:
-	if (!list_empty(&nn->nfsd_serv->sv_permsocks))
-		nn->nfsd_serv->sv_nrthreads--;
-	 else
-		nfsd_destroy(net);
+	nfsd_destroy(net);
 	return err;
 }
 
@@ -1150,7 +1146,7 @@ static ssize_t write_v4_end_grace(struct file *file, char *buf, size_t size)
  *	populating the filesystem.
  */
 
-static int nfsd_fill_super(struct super_block *sb, struct fs_context *fc)
+static int nfsd_fill_super(struct super_block * sb, void * data, int silent)
 {
 	static const struct tree_descr nfsd_files[] = {
 		[NFSD_List] = {"exports", &exports_nfsd_operations, S_IRUGO},
@@ -1180,33 +1176,15 @@ static int nfsd_fill_super(struct super_block *sb, struct fs_context *fc)
 #endif
 		/* last one */ {""}
 	};
-
+	get_net(sb->s_fs_info);
 	return simple_fill_super(sb, 0x6e667364, nfsd_files);
 }
 
-static int nfsd_fs_get_tree(struct fs_context *fc)
+static struct dentry *nfsd_mount(struct file_system_type *fs_type,
+	int flags, const char *dev_name, void *data)
 {
-	fc->s_fs_info = get_net(fc->net_ns);
-	return vfs_get_super(fc, vfs_get_keyed_super, nfsd_fill_super);
-}
-
-static void nfsd_fs_free_fc(struct fs_context *fc)
-{
-	if (fc->s_fs_info)
-		put_net(fc->s_fs_info);
-}
-
-static const struct fs_context_operations nfsd_fs_context_ops = {
-	.free		= nfsd_fs_free_fc,
-	.get_tree	= nfsd_fs_get_tree,
-};
-
-static int nfsd_init_fs_context(struct fs_context *fc)
-{
-	put_user_ns(fc->user_ns);
-	fc->user_ns = get_user_ns(fc->net_ns->user_ns);
-	fc->ops = &nfsd_fs_context_ops;
-	return 0;
+	struct net *net = current->nsproxy->net_ns;
+	return mount_ns(fs_type, flags, data, net, net->user_ns, nfsd_fill_super);
 }
 
 static void nfsd_umount(struct super_block *sb)
@@ -1220,7 +1198,7 @@ static void nfsd_umount(struct super_block *sb)
 static struct file_system_type nfsd_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "nfsd",
-	.init_fs_context = nfsd_init_fs_context,
+	.mount		= nfsd_mount,
 	.kill_sb	= nfsd_umount,
 };
 MODULE_ALIAS_FS("nfsd");

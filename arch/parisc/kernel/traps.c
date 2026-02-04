@@ -265,7 +265,7 @@ void die_if_kernel(char *str, struct pt_regs *regs, long err)
 		panic("Fatal exception");
 
 	oops_exit();
-	make_task_dead(SIGSEGV);
+	do_exit(SIGSEGV);
 }
 
 /* gdb uses break 4,8 */
@@ -684,7 +684,7 @@ void notrace handle_interruption(int code, struct pt_regs *regs)
 		if (user_mode(regs)) {
 			struct vm_area_struct *vma;
 
-			mmap_read_lock(current->mm);
+			down_read(&current->mm->mmap_sem);
 			vma = find_vma(current->mm,regs->iaoq[0]);
 			if (vma && (regs->iaoq[0] >= vma->vm_start)
 				&& (vma->vm_flags & VM_EXEC)) {
@@ -692,10 +692,10 @@ void notrace handle_interruption(int code, struct pt_regs *regs)
 				fault_address = regs->iaoq[0];
 				fault_space = regs->iasq[0];
 
-				mmap_read_unlock(current->mm);
+				up_read(&current->mm->mmap_sem);
 				break; /* call do_page_fault() */
 			}
-			mmap_read_unlock(current->mm);
+			up_read(&current->mm->mmap_sem);
 		}
 		/* Fall Through */
 	case 27: 
@@ -750,7 +750,7 @@ void notrace handle_interruption(int code, struct pt_regs *regs)
 	     * unless pagefault_disable() was called before.
 	     */
 
-	    if (faulthandler_disabled() || fault_space == 0)
+	    if (fault_space == 0 && !faulthandler_disabled())
 	    {
 		/* Clean up and return if in exception table. */
 		if (fixup_exception(regs))

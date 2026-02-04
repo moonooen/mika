@@ -857,13 +857,7 @@ static noinline struct btrfs_device *device_list_add(const char *path,
 			if (device->bdev != path_bdev) {
 				bdput(path_bdev);
 				mutex_unlock(&fs_devices->device_list_mutex);
-				/*
-				 * device->fs_info may not be reliable here, so
-				 * pass in a NULL instead. This avoids a
-				 * possible use-after-free when the fs_info and
-				 * fs_info->sb are already torn down.
-				 */
-				btrfs_warn_in_rcu(NULL,
+				btrfs_warn_in_rcu(device->fs_info,
 	"duplicate device %s devid %llu generation %llu scanned by %s (%d)",
 						  path, devid, found_transid,
 						  current->comm,
@@ -980,13 +974,22 @@ again:
 			continue;
 		}
 
-		/*
-		 * We have already validated the presence of BTRFS_DEV_REPLACE_DEVID,
-		 * in btrfs_init_dev_replace() so just continue.
-		 */
-		if (device->devid == BTRFS_DEV_REPLACE_DEVID)
-			continue;
-
+		if (device->devid == BTRFS_DEV_REPLACE_DEVID) {
+			/*
+			 * In the first step, keep the device which has
+			 * the correct fsid and the devid that is used
+			 * for the dev_replace procedure.
+			 * In the second step, the dev_replace state is
+			 * read from the device tree and it is known
+			 * whether the procedure is really active or
+			 * not, which means whether this device is
+			 * used or whether it should be removed.
+			 */
+			if (step == 0 || test_bit(BTRFS_DEV_STATE_REPLACE_TGT,
+						  &device->dev_state)) {
+				continue;
+			}
+		}
 		if (device->bdev) {
 			blkdev_put(device->bdev, device->mode);
 			device->bdev = NULL;
@@ -995,7 +998,9 @@ again:
 		if (test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state)) {
 			list_del_init(&device->dev_alloc_list);
 			clear_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
-			fs_devices->rw_devices--;
+			if (!test_bit(BTRFS_DEV_STATE_REPLACE_TGT,
+				      &device->dev_state))
+				fs_devices->rw_devices--;
 		}
 		list_del_init(&device->dev_list);
 		fs_devices->num_devices--;
@@ -1048,13 +1053,8 @@ static void btrfs_close_one_device(struct btrfs_device *device)
 		fs_devices->rw_devices--;
 	}
 
-	if (device->devid == BTRFS_DEV_REPLACE_DEVID)
-		clear_bit(BTRFS_DEV_STATE_REPLACE_TGT, &device->dev_state);
-
-	if (test_bit(BTRFS_DEV_STATE_MISSING, &device->dev_state)) {
-		clear_bit(BTRFS_DEV_STATE_MISSING, &device->dev_state);
+	if (test_bit(BTRFS_DEV_STATE_MISSING, &device->dev_state))
 		fs_devices->missing_devices--;
-	}
 
 	btrfs_close_bdev(device);
 
@@ -1418,7 +1418,7 @@ again:
 			goto out;
 	}
 
-	while (search_start < search_end) {
+	while (1) {
 		l = path->nodes[0];
 		slot = path->slots[0];
 		if (slot >= btrfs_header_nritems(l)) {
@@ -1440,9 +1440,6 @@ again:
 
 		if (key.type != BTRFS_DEV_EXTENT_KEY)
 			goto next;
-
-		if (key.offset > search_end)
-			break;
 
 		if (key.offset > search_start) {
 			hole_size = key.offset - search_start;
@@ -1518,7 +1515,6 @@ next:
 	else
 		ret = 0;
 
-	ASSERT(max_hole_start + max_hole_size <= search_end);
 out:
 	btrfs_free_path(path);
 	*start = max_hole_start;
@@ -2463,6 +2459,9 @@ int btrfs_init_new_device(struct btrfs_fs_info *fs_info, const char *device_path
 	btrfs_set_super_num_devices(fs_info->super_copy,
 				    orig_super_num_devices + 1);
 
+	/* add sysfs device entry */
+	btrfs_sysfs_add_device_link(fs_devices, device);
+
 	/*
 	 * we've got more storage, clear any full flags on the space
 	 * infos
@@ -2470,10 +2469,6 @@ int btrfs_init_new_device(struct btrfs_fs_info *fs_info, const char *device_path
 	btrfs_clear_space_info_full(fs_info);
 
 	mutex_unlock(&fs_info->chunk_mutex);
-
-	/* Add sysfs device entry */
-	btrfs_sysfs_add_device_link(fs_devices, device);
-
 	mutex_unlock(&fs_devices->device_list_mutex);
 
 	if (seeding_dev) {
@@ -2760,7 +2755,7 @@ static struct extent_map *get_chunk_map(struct btrfs_fs_info *fs_info,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (em->start > logical || em->start + em->len <= logical) {
+	if (em->start > logical || em->start + em->len < logical) {
 		btrfs_crit(fs_info,
 			   "found a bad mapping, wanted %llu-%llu, found %llu-%llu",
 			   logical, length, em->start, em->start + em->len);
@@ -2948,18 +2943,7 @@ again:
 			mutex_unlock(&fs_info->delete_unused_bgs_mutex);
 			goto error;
 		}
-		if (ret == 0) {
-			/*
-			 * On the first search we would find chunk tree with
-			 * offset -1, which is not possible. On subsequent
-			 * loops this would find an existing item on an invalid
-			 * offset (one less than the previous one, wrong
-			 * alignment and size).
-			 */
-			ret = -EUCLEAN;
-			mutex_unlock(&fs_info->delete_unused_bgs_mutex);
-			goto error;
-		}
+		BUG_ON(ret == 0); /* Corruption */
 
 		ret = btrfs_previous_item(chunk_root, path, key.objectid,
 					  key.type);
@@ -4032,8 +4016,6 @@ int btrfs_recover_balance(struct btrfs_fs_info *fs_info)
 		btrfs_warn(fs_info,
 	"balance: cannot set exclusive op status, resume manually");
 
-	btrfs_release_path(path);
-
 	mutex_lock(&fs_info->balance_mutex);
 	BUG_ON(fs_info->balance_ctl);
 	spin_lock(&fs_info->balance_lock);
@@ -4117,7 +4099,8 @@ int btrfs_cancel_balance(struct btrfs_fs_info *fs_info)
 		}
 	}
 
-	ASSERT(!test_bit(BTRFS_FS_BALANCE_RUNNING, &fs_info->flags));
+	BUG_ON(fs_info->balance_ctl ||
+		test_bit(BTRFS_FS_BALANCE_RUNNING, &fs_info->flags));
 	atomic_dec(&fs_info->balance_cancel_req);
 	mutex_unlock(&fs_info->balance_mutex);
 	return 0;
@@ -6939,12 +6922,12 @@ int btrfs_read_chunk_tree(struct btrfs_fs_info *fs_info)
 	 * do another round of validation checks.
 	 */
 	if (total_dev != fs_info->fs_devices->total_devices) {
-		btrfs_warn(fs_info,
-"super block num_devices %llu mismatch with DEV_ITEM count %llu, will be repaired on next transaction commit",
+		btrfs_err(fs_info,
+	   "super_num_devices %llu mismatch with num_devices %llu found here",
 			  btrfs_super_num_devices(fs_info->super_copy),
 			  total_dev);
-		fs_info->fs_devices->total_devices = total_dev;
-		btrfs_set_super_num_devices(fs_info->super_copy, total_dev);
+		ret = -EINVAL;
+		goto error;
 	}
 	if (btrfs_super_total_bytes(fs_info->super_copy) <
 	    fs_info->fs_devices->total_rw_bytes) {

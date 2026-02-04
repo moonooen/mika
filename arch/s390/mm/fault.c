@@ -33,7 +33,7 @@
 #include <linux/hugetlb.h>
 #include <asm/asm-offsets.h>
 #include <asm/diag.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <asm/gmap.h>
 #include <asm/irq.h>
 #include <asm/mmu_context.h>
@@ -143,7 +143,7 @@ static int bad_address(void *p)
 {
 	unsigned long dummy;
 
-	return get_kernel_nofault(dummy, (unsigned long *)p);
+	return probe_kernel_address((unsigned long *)p, dummy);
 }
 
 static void dump_pagetable(unsigned long asce, unsigned long address)
@@ -455,11 +455,9 @@ static inline vm_fault_t do_exception(struct pt_regs *regs, int access)
 	flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 	if (user_mode(regs))
 		flags |= FAULT_FLAG_USER;
-	if ((trans_exc_code & store_indication) == 0x400)
-		access = VM_WRITE;
-	if (access == VM_WRITE)
+	if (access == VM_WRITE || (trans_exc_code & store_indication) == 0x400)
 		flags |= FAULT_FLAG_WRITE;
-	mmap_read_lock(mm);
+	down_read(&mm->mmap_sem);
 
 	gmap = NULL;
 	if (IS_ENABLED(CONFIG_PGSTE) && type == GMAP_FAULT) {
@@ -505,7 +503,8 @@ retry:
 	 * the fault.
 	 */
 	fault = handle_mm_fault(vma, address, flags);
-	if (fault_signal_pending(fault, regs)) {
+	/* No reason to continue if interrupted by SIGKILL. */
+	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current)) {
 		fault = VM_FAULT_SIGNAL;
 		if (flags & FAULT_FLAG_RETRY_NOWAIT)
 			goto out_up;
@@ -543,7 +542,7 @@ retry:
 			flags &= ~(FAULT_FLAG_ALLOW_RETRY |
 				   FAULT_FLAG_RETRY_NOWAIT);
 			flags |= FAULT_FLAG_TRIED;
-			mmap_read_lock(mm);
+			down_read(&mm->mmap_sem);
 			goto retry;
 		}
 	}
@@ -561,7 +560,7 @@ retry:
 	}
 	fault = 0;
 out_up:
-	mmap_read_unlock(mm);
+	up_read(&mm->mmap_sem);
 out:
 	return fault;
 }

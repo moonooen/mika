@@ -20,7 +20,7 @@
 #include <asm/asm-offsets.h>
 #include <asm/hwcap.h>
 #include <asm/pgtable-hwdef.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <asm/ptrace.h>
 
 #include "proc-macros.S"
@@ -442,7 +442,7 @@ arm1026_crval:
 	string	cpu_arm1026_name, "ARM1026EJ-S"
 	.align
 
-	.section ".proc.info.init", "a"
+	.section ".proc.info.init", #alloc
 
 	.type	__arm1026_proc_info,#object
 __arm1026_proc_info:

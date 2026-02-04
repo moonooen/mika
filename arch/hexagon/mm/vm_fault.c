@@ -24,7 +24,7 @@
  * execptions.
  */
 
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <asm/traps.h>
 #include <linux/uaccess.h>
 #include <linux/mm.h>
@@ -68,7 +68,7 @@ void do_page_fault(unsigned long address, long cause, struct pt_regs *regs)
 	if (user_mode(regs))
 		flags |= FAULT_FLAG_USER;
 retry:
-	mmap_read_lock(mm);
+	down_read(&mm->mmap_sem);
 	vma = find_vma(mm, address);
 	if (!vma)
 		goto bad_area;
@@ -104,7 +104,7 @@ good_area:
 
 	fault = handle_mm_fault(vma, address, flags);
 
-	if (fault_signal_pending(fault, regs))
+	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))
 		return;
 
 	/* The most common case -- we are done. */
@@ -121,11 +121,11 @@ good_area:
 			}
 		}
 
-		mmap_read_unlock(mm);
+		up_read(&mm->mmap_sem);
 		return;
 	}
 
-	mmap_read_unlock(mm);
+	up_read(&mm->mmap_sem);
 
 	/* Handle copyin/out exception cases */
 	if (!user_mode(regs))
@@ -152,7 +152,7 @@ good_area:
 	return;
 
 bad_area:
-	mmap_read_unlock(mm);
+	up_read(&mm->mmap_sem);
 
 	if (user_mode(regs)) {
 		force_sig_fault(SIGSEGV, si_code, (void __user *)address, current);

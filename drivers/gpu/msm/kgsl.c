@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <uapi/linux/sched/types.h>
@@ -2599,15 +2599,15 @@ static int memdesc_sg_virt(struct kgsl_memdesc *memdesc, unsigned long useraddr)
 		goto out;
 	}
 
-	mmap_read_lock(current->mm);
+	down_read(&current->mm->mmap_sem);
 	if (!check_vma(useraddr, memdesc->size)) {
-		mmap_read_unlock(current->mm);
+		up_read(&current->mm->mmap_sem);
 		ret = -EFAULT;
 		goto out;
 	}
 
 	npages = get_user_pages(useraddr, sglen, write, pages, NULL);
-	mmap_read_unlock(current->mm);
+	up_read(&current->mm->mmap_sem);
 
 	ret = (npages < 0) ? (int)npages : 0;
 	if (ret)
@@ -2729,7 +2729,7 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 	 * Find the VMA containing this pointer and figure out if it
 	 * is a dma-buf.
 	 */
-	mmap_read_lock(current->mm);
+	down_read(&current->mm->mmap_sem);
 	vma = find_vma(current->mm, hostptr);
 
 	if (vma && vma->vm_file) {
@@ -2737,7 +2737,7 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 
 		ret = check_vma_flags(vma, entry->memdesc.flags);
 		if (ret) {
-			mmap_read_unlock(current->mm);
+			up_read(&current->mm->mmap_sem);
 			return ret;
 		}
 
@@ -2746,7 +2746,7 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 		 * already mapped
 		 */
 		if (vma->vm_ops == &kgsl_gpumem_vm_ops) {
-			mmap_read_unlock(current->mm);
+			up_read(&current->mm->mmap_sem);
 			return -EFAULT;
 		}
 
@@ -2755,7 +2755,7 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 		if (fd) {
 			dmabuf = dma_buf_get(fd - 1);
 			if (IS_ERR(dmabuf)) {
-				mmap_read_unlock(current->mm);
+				up_read(&current->mm->mmap_sem);
 				return PTR_ERR(dmabuf);
 			}
 			/*
@@ -2767,21 +2767,21 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 			 */
 			if (dmabuf != vma->vm_file->private_data) {
 				dma_buf_put(dmabuf);
-				mmap_read_unlock(current->mm);
+				up_read(&current->mm->mmap_sem);
 				return -EBADF;
 			}
 		}
 	}
 
 	if (IS_ERR_OR_NULL(dmabuf)) {
-		mmap_read_unlock(current->mm);
+		up_read(&current->mm->mmap_sem);
 		return dmabuf ? PTR_ERR(dmabuf) : -ENODEV;
 	}
 
 	ret = kgsl_setup_dma_buf(device, pagetable, entry, dmabuf);
 	if (ret) {
 		dma_buf_put(dmabuf);
-		mmap_read_unlock(current->mm);
+		up_read(&current->mm->mmap_sem);
 		return ret;
 	}
 
@@ -2793,7 +2793,7 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 	else
 		entry->memdesc.flags &= ~((u64) KGSL_MEMFLAGS_IOCOHERENT);
 
-	mmap_read_unlock(current->mm);
+	up_read(&current->mm->mmap_sem);
 	return 0;
 }
 #else
@@ -4706,7 +4706,7 @@ static void kgsl_gpumem_vm_open(struct vm_area_struct *vma)
 	atomic_inc(&entry->map_count);
 }
 
-static vm_fault_t
+static int
 kgsl_gpumem_vm_fault(struct vm_fault *vmf)
 {
 	struct kgsl_mem_entry *entry = vmf->vma->vm_private_data;

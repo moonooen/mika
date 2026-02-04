@@ -525,6 +525,11 @@ static int sun4i_can_err(struct net_device *dev, u8 isrc, u8 status)
 	rxerr = (errc >> 16) & 0xFF;
 	txerr = errc & 0xFF;
 
+	if (skb) {
+		cf->data[6] = txerr;
+		cf->data[7] = rxerr;
+	}
+
 	if (isrc & SUN4I_INT_DATA_OR) {
 		/* data overrun interrupt */
 		netdev_dbg(dev, "data overrun interrupt\n");
@@ -555,17 +560,15 @@ static int sun4i_can_err(struct net_device *dev, u8 isrc, u8 status)
 		else
 			state = CAN_STATE_ERROR_ACTIVE;
 	}
-	if (skb && state != CAN_STATE_BUS_OFF) {
-		cf->data[6] = txerr;
-		cf->data[7] = rxerr;
-	}
 	if (isrc & SUN4I_INT_BUS_ERR) {
 		/* bus error interrupt */
 		netdev_dbg(dev, "bus error interrupt\n");
 		priv->can.can_stats.bus_error++;
-		ecc = readl(priv->base + SUN4I_REG_STA_ADDR);
+		stats->rx_errors++;
 
 		if (likely(skb)) {
+			ecc = readl(priv->base + SUN4I_REG_STA_ADDR);
+
 			cf->can_id |= CAN_ERR_PROT | CAN_ERR_BUSERROR;
 
 			switch (ecc & SUN4I_STA_MASK_ERR) {
@@ -583,15 +586,9 @@ static int sun4i_can_err(struct net_device *dev, u8 isrc, u8 status)
 					       >> 16;
 				break;
 			}
-		}
-
-		/* error occurred during transmission? */
-		if ((ecc & SUN4I_STA_ERR_DIR) == 0) {
-			if (likely(skb))
+			/* error occurred during transmission? */
+			if ((ecc & SUN4I_STA_ERR_DIR) == 0)
 				cf->data[2] |= CAN_ERR_PROT_TX;
-			stats->tx_errors++;
-		} else {
-			stats->rx_errors++;
 		}
 	}
 	if (isrc & SUN4I_INT_ERR_PASSIVE) {
@@ -618,10 +615,10 @@ static int sun4i_can_err(struct net_device *dev, u8 isrc, u8 status)
 		tx_state = txerr >= rxerr ? state : 0;
 		rx_state = txerr <= rxerr ? state : 0;
 
-		/* The skb allocation might fail, but can_change_state()
-		 * handles cf == NULL.
-		 */
-		can_change_state(dev, cf, tx_state, rx_state);
+		if (likely(skb))
+			can_change_state(dev, cf, tx_state, rx_state);
+		else
+			priv->can.state = state;
 		if (state == CAN_STATE_BUS_OFF)
 			can_bus_off(dev);
 	}
@@ -645,8 +642,8 @@ static irqreturn_t sun4i_can_interrupt(int irq, void *dev_id)
 	u8 isrc, status;
 	int n = 0;
 
-	while ((n < SUN4I_CAN_MAX_IRQ) &&
-	       (isrc = readl(priv->base + SUN4I_REG_INT_ADDR))) {
+	while ((isrc = readl(priv->base + SUN4I_REG_INT_ADDR)) &&
+	       (n < SUN4I_CAN_MAX_IRQ)) {
 		n++;
 		status = readl(priv->base + SUN4I_REG_STA_ADDR);
 
@@ -752,7 +749,6 @@ static const struct net_device_ops sun4ican_netdev_ops = {
 	.ndo_open = sun4ican_open,
 	.ndo_stop = sun4ican_close,
 	.ndo_start_xmit = sun4ican_start_xmit,
-	.ndo_change_mtu = can_change_mtu,
 };
 
 static const struct of_device_id sun4ican_of_match[] = {

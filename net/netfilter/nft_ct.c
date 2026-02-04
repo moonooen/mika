@@ -29,8 +29,8 @@ struct nft_ct {
 	enum nft_ct_keys	key:8;
 	enum ip_conntrack_dir	dir:8;
 	union {
-		u8		dreg;
-		u8		sreg;
+		enum nft_registers	dreg:8;
+		enum nft_registers	sreg:8;
 	};
 };
 
@@ -429,12 +429,12 @@ static int nft_ct_get_init(const struct nft_ctx *ctx,
 
 		switch (ctx->family) {
 		case NFPROTO_IPV4:
-			len = sizeof_field(struct nf_conntrack_tuple,
+			len = FIELD_SIZEOF(struct nf_conntrack_tuple,
 					   src.u3.ip);
 			break;
 		case NFPROTO_IPV6:
 		case NFPROTO_INET:
-			len = sizeof_field(struct nf_conntrack_tuple,
+			len = FIELD_SIZEOF(struct nf_conntrack_tuple,
 					   src.u3.ip6);
 			break;
 		default:
@@ -446,20 +446,20 @@ static int nft_ct_get_init(const struct nft_ctx *ctx,
 		if (tb[NFTA_CT_DIRECTION] == NULL)
 			return -EINVAL;
 
-		len = sizeof_field(struct nf_conntrack_tuple, src.u3.ip);
+		len = FIELD_SIZEOF(struct nf_conntrack_tuple, src.u3.ip);
 		break;
 	case NFT_CT_SRC_IP6:
 	case NFT_CT_DST_IP6:
 		if (tb[NFTA_CT_DIRECTION] == NULL)
 			return -EINVAL;
 
-		len = sizeof_field(struct nf_conntrack_tuple, src.u3.ip6);
+		len = FIELD_SIZEOF(struct nf_conntrack_tuple, src.u3.ip6);
 		break;
 	case NFT_CT_PROTO_SRC:
 	case NFT_CT_PROTO_DST:
 		if (tb[NFTA_CT_DIRECTION] == NULL)
 			return -EINVAL;
-		len = sizeof_field(struct nf_conntrack_tuple, src.u.all);
+		len = FIELD_SIZEOF(struct nf_conntrack_tuple, src.u.all);
 		break;
 	case NFT_CT_BYTES:
 	case NFT_CT_PKTS:
@@ -486,8 +486,9 @@ static int nft_ct_get_init(const struct nft_ctx *ctx,
 		}
 	}
 
-	err = nft_parse_register_store(ctx, tb[NFTA_CT_DREG], &priv->dreg, NULL,
-				       NFT_DATA_VALUE, len);
+	priv->dreg = nft_parse_register(tb[NFTA_CT_DREG]);
+	err = nft_validate_register_store(ctx, priv->dreg, NULL,
+					  NFT_DATA_VALUE, len);
 	if (err < 0)
 		return err;
 
@@ -536,7 +537,7 @@ static int nft_ct_set_init(const struct nft_ctx *ctx,
 	case NFT_CT_MARK:
 		if (tb[NFTA_CT_DIRECTION])
 			return -EINVAL;
-		len = sizeof_field(struct nf_conn, mark);
+		len = FIELD_SIZEOF(struct nf_conn, mark);
 		break;
 #endif
 #ifdef CONFIG_NF_CONNTRACK_LABELS
@@ -580,7 +581,8 @@ static int nft_ct_set_init(const struct nft_ctx *ctx,
 		}
 	}
 
-	err = nft_parse_register_load(tb[NFTA_CT_SREG], &priv->sreg, len);
+	priv->sreg = nft_parse_register(tb[NFTA_CT_SREG]);
+	err = nft_validate_register_load(priv->sreg, len);
 	if (err < 0)
 		goto err1;
 

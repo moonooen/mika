@@ -52,7 +52,7 @@
 #include <asm/rtas.h>
 #include <asm/io.h>
 #include <asm/mmu_context.h>
-#include <linux/pgtable.h>
+#include <asm/pgtable.h>
 #include <asm/mmu.h>
 #include <linux/uaccess.h>
 #include <asm/smp.h>
@@ -266,7 +266,8 @@ void __ref vmemmap_free(unsigned long start, unsigned long end,
 	start = _ALIGN_DOWN(start, page_size);
 	if (altmap) {
 		alt_start = altmap->base_pfn;
-		alt_end = altmap->base_pfn + altmap->reserve + altmap->free;
+		alt_end = altmap->base_pfn + altmap->reserve +
+			  altmap->free + altmap->alloc + altmap->align;
 	}
 
 	pr_debug("vmemmap_free %lx...%lx\n", start, end);

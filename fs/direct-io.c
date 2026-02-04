@@ -869,7 +869,6 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 		    struct buffer_head *map_bh)
 {
 	int ret = 0;
-	int boundary = sdio->boundary;	/* dio_send_cur_page may clear it */
 
 	if (dio->op == REQ_OP_WRITE) {
 		/*
@@ -908,10 +907,10 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 	sdio->cur_page_fs_offset = sdio->block_in_file << sdio->blkbits;
 out:
 	/*
-	 * If boundary then we want to schedule the IO now to
+	 * If sdio->boundary then we want to schedule the IO now to
 	 * avoid metadata seeks.
 	 */
-	if (boundary) {
+	if (sdio->boundary) {
 		ret = dio_send_cur_page(dio, sdio, map_bh);
 		if (sdio->bio)
 			dio_bio_submit(dio, sdio);
@@ -1328,7 +1327,7 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 	spin_lock_init(&dio->bio_lock);
 	dio->refcount = 1;
 
-	dio->should_dirty = iter_is_iovec(iter) && iov_iter_rw(iter) == READ;
+	dio->should_dirty = (iter->type == ITER_IOVEC);
 	sdio.iter = iter;
 	sdio.final_block_in_request = end >> blkbits;
 

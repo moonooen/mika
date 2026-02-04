@@ -30,7 +30,6 @@
 #include <linux/iommu.h>
 #include <linux/kmemleak.h>
 #include <linux/mem_encrypt.h>
-#include <linux/iopoll.h>
 #include <asm/pci-direct.h>
 #include <asm/iommu.h>
 #include <asm/gart.h>
@@ -90,7 +89,7 @@
 #define ACPI_DEVFLAG_LINT1              0x80
 #define ACPI_DEVFLAG_ATSDIS             0x10000000
 
-#define LOOP_TIMEOUT	2000000
+#define LOOP_TIMEOUT	100000
 /*
  * ACPI table definitions
  *
@@ -641,16 +640,11 @@ static void iommu_enable_command_buffer(struct amd_iommu *iommu)
 
 	BUG_ON(iommu->cmd_buf == NULL);
 
-	if (!is_kdump_kernel()) {
-		/*
-		 * Command buffer is re-used for kdump kernel and setting
-		 * of MMIO register is not required.
-		 */
-		entry = iommu_virt_to_phys(iommu->cmd_buf);
-		entry |= MMIO_CMD_SIZE_512;
-		memcpy_toio(iommu->mmio_base + MMIO_CMD_BUF_OFFSET,
-			    &entry, sizeof(entry));
-	}
+	entry = iommu_virt_to_phys(iommu->cmd_buf);
+	entry |= MMIO_CMD_SIZE_512;
+
+	memcpy_toio(iommu->mmio_base + MMIO_CMD_BUF_OFFSET,
+		    &entry, sizeof(entry));
 
 	amd_iommu_reset_cmd_buffer(iommu);
 }
@@ -683,15 +677,10 @@ static void iommu_enable_event_buffer(struct amd_iommu *iommu)
 
 	BUG_ON(iommu->evt_buf == NULL);
 
-	if (!is_kdump_kernel()) {
-		/*
-		 * Event buffer is re-used for kdump kernel and setting
-		 * of MMIO register is not required.
-		 */
-		entry = iommu_virt_to_phys(iommu->evt_buf) | EVT_LEN_MASK;
-		memcpy_toio(iommu->mmio_base + MMIO_EVT_BUF_OFFSET,
-			    &entry, sizeof(entry));
-	}
+	entry = iommu_virt_to_phys(iommu->evt_buf) | EVT_LEN_MASK;
+
+	memcpy_toio(iommu->mmio_base + MMIO_EVT_BUF_OFFSET,
+		    &entry, sizeof(entry));
 
 	/* set head and tail to zero manually */
 	writel(0x00, iommu->mmio_base + MMIO_EVT_HEAD_OFFSET);
@@ -783,7 +772,6 @@ static int iommu_ga_log_enable(struct amd_iommu *iommu)
 		status = readl(iommu->mmio_base + MMIO_STATUS_OFFSET);
 		if (status & (MMIO_STATUS_GALOG_RUN_MASK))
 			break;
-		udelay(10);
 	}
 
 	if (i >= LOOP_TIMEOUT)
@@ -1419,17 +1407,8 @@ static int __init init_iommu_from_acpi(struct amd_iommu *iommu,
 	return 0;
 }
 
-static void __init free_sysfs(struct amd_iommu *iommu)
-{
-	if (iommu->iommu.dev) {
-		iommu_device_unregister(&iommu->iommu);
-		iommu_device_sysfs_remove(&iommu->iommu);
-	}
-}
-
 static void __init free_iommu_one(struct amd_iommu *iommu)
 {
-	free_sysfs(iommu);
 	free_command_buffer(iommu);
 	free_event_buffer(iommu);
 	free_ppr_log(iommu);
@@ -1751,9 +1730,6 @@ static int __init iommu_init_pci(struct amd_iommu *iommu)
 
 	/* Prevent binding other PCI device drivers to IOMMU devices */
 	iommu->dev->match_driver = false;
-
-	/* ACPI _PRT won't have an IRQ for IOMMU */
-	iommu->dev->irq_managed = 1;
 
 	pci_read_config_dword(iommu->dev, cap_ptr + MMIO_CAP_HDR_OFFSET,
 			      &iommu->cap);
@@ -2965,21 +2941,6 @@ static int __init parse_ivrs_acpihid(char *str)
 
 	if (!hid || !(*hid) || !uid) {
 		pr_err("AMD-Vi: Invalid command line: hid or uid\n");
-		return 1;
-	}
-
-	/*
-	 * Ignore leading zeroes after ':', so e.g., AMDI0095:00
-	 * will match AMDI0095:0 in the second strcmp in acpi_dev_hid_uid_match
-	 */
-	while (*uid == '0' && *(uid + 1))
-		uid++;
-
-	if (strlen(hid) >= ACPIHID_HID_LEN) {
-		pr_err("Invalid command line: hid is too long\n");
-		return 1;
-	} else if (strlen(uid) >= ACPIHID_UID_LEN) {
-		pr_err("Invalid command line: uid is too long\n");
 		return 1;
 	}
 

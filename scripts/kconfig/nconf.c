@@ -8,7 +8,6 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#include <locale.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -505,8 +504,8 @@ static int get_mext_match(const char *match_str, match_f flag)
 	else if (flag == FIND_NEXT_MATCH_UP)
 		--match_start;
 
-	match_start = (match_start + items_num) % items_num;
 	index = match_start;
+	index = (index + items_num) % items_num;
 	while (true) {
 		char *str = k_menu_items[index].str;
 		if (strcasestr(str, match_str) != NULL)
@@ -581,8 +580,6 @@ static void item_add_str(const char *fmt, ...)
 	strncpy(k_menu_items[index].str,
 		tmp_str,
 		sizeof(k_menu_items[index].str));
-
-	k_menu_items[index].str[sizeof(k_menu_items[index].str) - 1] = '\0';
 
 	free_item(curses_menu_items[index]);
 	curses_menu_items[index] = new_item(
@@ -1480,8 +1477,6 @@ int main(int ac, char **av)
 {
 	int lines, columns;
 	char *mode;
-
-	setlocale(LC_ALL, "");
 
 	if (ac > 1 && strcmp(av[1], "-s") == 0) {
 		/* Silence conf_read() until the real callback is set up */

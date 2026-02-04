@@ -1515,10 +1515,8 @@ static int sxgbe_rx(struct sxgbe_priv_data *priv, int limit)
 
 		skb = priv->rxq[qnum]->rx_skbuff[entry];
 
-		if (unlikely(!skb)) {
+		if (unlikely(!skb))
 			netdev_err(priv->dev, "rx descriptor is not consistent\n");
-			break;
-		}
 
 		prefetch(skb->data - NET_IP_ALIGN);
 		priv->rxq[qnum]->rx_skbuff[entry] = NULL;
@@ -2282,18 +2280,18 @@ static int __init sxgbe_cmdline_opt(char *str)
 	char *opt;
 
 	if (!str || !*str)
-		return 1;
+		return -EINVAL;
 	while ((opt = strsep(&str, ",")) != NULL) {
 		if (!strncmp(opt, "eee_timer:", 10)) {
 			if (kstrtoint(opt + 10, 0, &eee_timer))
 				goto err;
 		}
 	}
-	return 1;
+	return 0;
 
 err:
 	pr_err("%s: ERROR broken module parameter conversion\n", __func__);
-	return 1;
+	return -EINVAL;
 }
 
 __setup("sxgbeeth=", sxgbe_cmdline_opt);

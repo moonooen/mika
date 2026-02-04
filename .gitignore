@@ -114,6 +114,7 @@ GTAGS
 # id-utils files
 ID
 
+*.orig
 *~
 \#*#
 
@@ -135,7 +136,8 @@ all.config
 # fetched Android config fragments
 kernel/configs/android-*.cfg
 
-#
-#Ignoring Android.bp link file
-#
-Android.bp
+# vendor device tree directories
+arch/arm64/boot/dts/vendor/
+
+# Tech package directories
+techpack/

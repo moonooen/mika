@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * fs/kernfs/dir.c - kernfs directory implementation
  *
  * Copyright (c) 2001-3 Patrick Mochel
  * Copyright (c) 2007 SUSE Linux Products GmbH
  * Copyright (c) 2007, 2013 Tejun Heo <tj@kernel.org>
+ *
+ * This file is released under the GPLv2.
  */
 
 #include <linux/sched.h>
@@ -19,15 +20,7 @@
 
 DEFINE_MUTEX(kernfs_mutex);
 static DEFINE_SPINLOCK(kernfs_rename_lock);	/* kn->parent and ->name */
-/*
- * Don't use rename_lock to piggy back on pr_cont_buf. We don't want to
- * call pr_cont() while holding rename_lock. Because sometimes pr_cont()
- * will perform wakeups when releasing console_sem. Holding rename_lock
- * will introduce deadlock if the scheduler reads the kernfs_name in the
- * wakeup path.
- */
-static DEFINE_SPINLOCK(kernfs_pr_cont_lock);
-static char kernfs_pr_cont_buf[PATH_MAX];	/* protected by pr_cont_lock */
+static char kernfs_pr_cont_buf[PATH_MAX];	/* protected by rename_lock */
 static DEFINE_SPINLOCK(kernfs_idr_lock);	/* root->ino_idr */
 
 #define rb_to_kn(X) rb_entry((X), struct kernfs_node, rb)
@@ -236,12 +229,12 @@ void pr_cont_kernfs_name(struct kernfs_node *kn)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&kernfs_pr_cont_lock, flags);
+	spin_lock_irqsave(&kernfs_rename_lock, flags);
 
-	kernfs_name(kn, kernfs_pr_cont_buf, sizeof(kernfs_pr_cont_buf));
+	kernfs_name_locked(kn, kernfs_pr_cont_buf, sizeof(kernfs_pr_cont_buf));
 	pr_cont("%s", kernfs_pr_cont_buf);
 
-	spin_unlock_irqrestore(&kernfs_pr_cont_lock, flags);
+	spin_unlock_irqrestore(&kernfs_rename_lock, flags);
 }
 
 /**
@@ -255,10 +248,10 @@ void pr_cont_kernfs_path(struct kernfs_node *kn)
 	unsigned long flags;
 	int sz;
 
-	spin_lock_irqsave(&kernfs_pr_cont_lock, flags);
+	spin_lock_irqsave(&kernfs_rename_lock, flags);
 
-	sz = kernfs_path_from_node(kn, NULL, kernfs_pr_cont_buf,
-				   sizeof(kernfs_pr_cont_buf));
+	sz = kernfs_path_from_node_locked(kn, NULL, kernfs_pr_cont_buf,
+					  sizeof(kernfs_pr_cont_buf));
 	if (sz < 0) {
 		pr_cont("(error)");
 		goto out;
@@ -272,7 +265,7 @@ void pr_cont_kernfs_path(struct kernfs_node *kn)
 	pr_cont("%s", kernfs_pr_cont_buf);
 
 out:
-	spin_unlock_irqrestore(&kernfs_pr_cont_lock, flags);
+	spin_unlock_irqrestore(&kernfs_rename_lock, flags);
 }
 
 /**
@@ -445,7 +438,7 @@ void kernfs_put_active(struct kernfs_node *kn)
 		return;
 
 	if (kernfs_lockdep(kn))
-		rwsem_release(&kn->dep_map, _RET_IP_);
+		rwsem_release(&kn->dep_map, 1, _RET_IP_);
 	v = atomic_dec_return(&kn->active);
 	if (likely(v != KN_DEACTIVATED_BIAS))
 		return;
@@ -483,7 +476,7 @@ static void kernfs_drain(struct kernfs_node *kn)
 
 	if (kernfs_lockdep(kn)) {
 		lock_acquired(&kn->dep_map, _RET_IP_);
-		rwsem_release(&kn->dep_map, _RET_IP_);
+		rwsem_release(&kn->dep_map, 1, _RET_IP_);
 	}
 
 	kernfs_drain_open_files(kn);
@@ -539,11 +532,14 @@ void kernfs_put(struct kernfs_node *kn)
 	kfree_const(kn->name);
 
 	if (kn->iattr) {
+		if (kn->iattr->ia_secdata)
+			security_release_secctx(kn->iattr->ia_secdata,
+						kn->iattr->ia_secdata_len);
 		simple_xattrs_free(&kn->iattr->xattrs);
 	}
 	kfree(kn->iattr);
 	spin_lock(&kernfs_idr_lock);
-	idr_remove(&root->ino_idr, kernfs_ino(kn));
+	idr_remove(&root->ino_idr, kn->id.ino);
 	spin_unlock(&kernfs_idr_lock);
 	kmem_cache_free(kernfs_node_cache, kn);
 
@@ -649,8 +645,8 @@ static struct kernfs_node *__kernfs_new_node(struct kernfs_root *root,
 	idr_preload_end();
 	if (ret < 0)
 		goto err_out2;
-
-	kn->id = (u64)gen << 32 | ret;
+	kn->id.ino = ret;
+	kn->id.generation = gen;
 
 	/*
 	 * set ino first. This RELEASE is paired with atomic_inc_not_zero in
@@ -679,7 +675,7 @@ static struct kernfs_node *__kernfs_new_node(struct kernfs_root *root,
 	return kn;
 
  err_out3:
-	idr_remove(&root->ino_idr, kernfs_ino(kn));
+	idr_remove(&root->ino_idr, kn->id.ino);
  err_out2:
 	kmem_cache_free(kernfs_node_cache, kn);
  err_out1:
@@ -740,7 +736,7 @@ struct kernfs_node *kernfs_find_and_get_node_by_ino(struct kernfs_root *root,
 	 * before 'count'. So if 'count' is uptodate, 'ino' should be uptodate,
 	 * hence we can use 'ino' to filter stale node.
 	 */
-	if ((u32)kn->id != ino)
+	if (kn->id.ino != ino)
 		goto out;
 	rcu_read_unlock();
 
@@ -797,8 +793,9 @@ int kernfs_add_one(struct kernfs_node *kn)
 	/* Update timestamps on the parent */
 	ps_iattr = parent->iattr;
 	if (ps_iattr) {
-		ktime_get_real_ts64(&ps_iattr->ia_ctime);
-		ps_iattr->ia_mtime = ps_iattr->ia_ctime;
+		struct iattr *ps_iattrs = &ps_iattr->ia_iattr;
+		ktime_get_real_ts64(&ps_iattrs->ia_ctime);
+		ps_iattrs->ia_mtime = ps_iattrs->ia_ctime;
 	}
 
 	mutex_unlock(&kernfs_mutex);
@@ -870,12 +867,13 @@ static struct kernfs_node *kernfs_walk_ns(struct kernfs_node *parent,
 
 	lockdep_assert_held(&kernfs_mutex);
 
-	spin_lock_irq(&kernfs_pr_cont_lock);
+	/* grab kernfs_rename_lock to piggy back on kernfs_pr_cont_buf */
+	spin_lock_irq(&kernfs_rename_lock);
 
 	len = strlcpy(kernfs_pr_cont_buf, path, sizeof(kernfs_pr_cont_buf));
 
 	if (len >= sizeof(kernfs_pr_cont_buf)) {
-		spin_unlock_irq(&kernfs_pr_cont_lock);
+		spin_unlock_irq(&kernfs_rename_lock);
 		return NULL;
 	}
 
@@ -887,7 +885,7 @@ static struct kernfs_node *kernfs_walk_ns(struct kernfs_node *parent,
 		parent = kernfs_find_ns(parent, name, ns);
 	}
 
-	spin_unlock_irq(&kernfs_pr_cont_lock);
+	spin_unlock_irq(&kernfs_rename_lock);
 
 	return parent;
 }
@@ -1329,8 +1327,9 @@ static void __kernfs_remove(struct kernfs_node *kn)
 
 			/* update timestamps on the parent */
 			if (ps_iattr) {
-				ktime_get_real_ts64(&ps_iattr->ia_ctime);
-				ps_iattr->ia_mtime = ps_iattr->ia_ctime;
+				ktime_get_real_ts64(&ps_iattr->ia_iattr.ia_ctime);
+				ps_iattr->ia_iattr.ia_mtime =
+					ps_iattr->ia_iattr.ia_ctime;
 			}
 
 			kernfs_put(pos);
@@ -1507,11 +1506,8 @@ int kernfs_remove_by_name_ns(struct kernfs_node *parent, const char *name,
 	mutex_lock(&kernfs_mutex);
 
 	kn = kernfs_find_ns(parent, name, ns);
-	if (kn) {
-		kernfs_get(kn);
+	if (kn)
 		__kernfs_remove(kn);
-		kernfs_put(kn);
-	}
 
 	mutex_unlock(&kernfs_mutex);
 
@@ -1679,7 +1675,7 @@ static int kernfs_fop_readdir(struct file *file, struct dir_context *ctx)
 		const char *name = pos->name;
 		unsigned int type = dt_type(pos);
 		int len = strlen(name);
-		ino_t ino = kernfs_ino(pos);
+		ino_t ino = pos->id.ino;
 
 		ctx->pos = pos->hash;
 		file->private_data = pos;

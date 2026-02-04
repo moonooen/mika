@@ -9,7 +9,6 @@
  */
 
 #include <linux/errno.h>
-#include <linux/of.h>
 #include <linux/percpu.h>
 #include <linux/spinlock.h>
 
@@ -19,7 +18,6 @@
 void __iomem *mips_gcr_base;
 void __iomem *mips_cm_l2sync_base;
 int mips_cm_is64;
-bool mips_cm_is_l2_hci_broken;
 
 static char *cm2_tr[8] = {
 	"mem",	"gcr",	"gic",	"mmio",
@@ -185,7 +183,8 @@ static void mips_cm_probe_l2sync(void)
 	phys_addr_t addr;
 
 	/* L2-only sync was introduced with CM major revision 6 */
-	major_rev = FIELD_GET(CM_GCR_REV_MAJOR, read_gcr_rev());
+	major_rev = (read_gcr_rev() & CM_GCR_REV_MAJOR) >>
+		__ffs(CM_GCR_REV_MAJOR);
 	if (major_rev < 6)
 		return;
 
@@ -200,18 +199,6 @@ static void mips_cm_probe_l2sync(void)
 
 	/* Map the region */
 	mips_cm_l2sync_base = ioremap_nocache(addr, MIPS_CM_L2SYNC_SIZE);
-}
-
-void mips_cm_update_property(void)
-{
-	struct device_node *cm_node;
-
-	cm_node = of_find_compatible_node(of_root, NULL, "mobileye,eyeq6-cm");
-	if (!cm_node)
-		return;
-	pr_info("HCI (Hardware Cache Init for the L2 cache) in GCR_L2_RAM_CONFIG from the CM3 is broken");
-	mips_cm_is_l2_hci_broken = true;
-	of_node_put(cm_node);
 }
 
 int mips_cm_probe(void)
@@ -280,13 +267,13 @@ void mips_cm_lock_other(unsigned int cluster, unsigned int core,
 	preempt_disable();
 
 	if (cm_rev >= CM_REV_CM3) {
-		val = FIELD_PREP(CM3_GCR_Cx_OTHER_CORE, core) |
-		      FIELD_PREP(CM3_GCR_Cx_OTHER_VP, vp);
+		val = core << __ffs(CM3_GCR_Cx_OTHER_CORE);
+		val |= vp << __ffs(CM3_GCR_Cx_OTHER_VP);
 
 		if (cm_rev >= CM_REV_CM3_5) {
 			val |= CM_GCR_Cx_OTHER_CLUSTER_EN;
-			val |= FIELD_PREP(CM_GCR_Cx_OTHER_CLUSTER, cluster);
-			val |= FIELD_PREP(CM_GCR_Cx_OTHER_BLOCK, block);
+			val |= cluster << __ffs(CM_GCR_Cx_OTHER_CLUSTER);
+			val |= block << __ffs(CM_GCR_Cx_OTHER_BLOCK);
 		} else {
 			WARN_ON(cluster != 0);
 			WARN_ON(block != CM_GCR_Cx_OTHER_BLOCK_LOCAL);
@@ -316,7 +303,7 @@ void mips_cm_lock_other(unsigned int cluster, unsigned int core,
 		spin_lock_irqsave(&per_cpu(cm_core_lock, curr_core),
 				  per_cpu(cm_core_lock_flags, curr_core));
 
-		val = FIELD_PREP(CM_GCR_Cx_OTHER_CORENUM, core);
+		val = core << __ffs(CM_GCR_Cx_OTHER_CORENUM);
 	}
 
 	write_gcr_cl_other(val);
@@ -360,8 +347,8 @@ void mips_cm_error_report(void)
 	cm_other = read_gcr_error_mult();
 
 	if (revision < CM_REV_CM3) { /* CM2 */
-		cause = FIELD_GET(CM_GCR_ERROR_CAUSE_ERRTYPE, cm_error);
-		ocause = FIELD_GET(CM_GCR_ERROR_MULT_ERR2ND, cm_other);
+		cause = cm_error >> __ffs(CM_GCR_ERROR_CAUSE_ERRTYPE);
+		ocause = cm_other >> __ffs(CM_GCR_ERROR_MULT_ERR2ND);
 
 		if (!cause)
 			return;
@@ -403,8 +390,8 @@ void mips_cm_error_report(void)
 		ulong core_id_bits, vp_id_bits, cmd_bits, cmd_group_bits;
 		ulong cm3_cca_bits, mcp_bits, cm3_tr_bits, sched_bit;
 
-		cause = FIELD_GET(CM3_GCR_ERROR_CAUSE_ERRTYPE, cm_error);
-		ocause = FIELD_GET(CM_GCR_ERROR_MULT_ERR2ND, cm_other);
+		cause = cm_error >> __ffs64(CM3_GCR_ERROR_CAUSE_ERRTYPE);
+		ocause = cm_other >> __ffs(CM_GCR_ERROR_MULT_ERR2ND);
 
 		if (!cause)
 			return;

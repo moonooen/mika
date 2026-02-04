@@ -190,12 +190,12 @@ static int radeon_cs_parser_relocs(struct radeon_cs_parser *p)
 		p->vm_bos = radeon_vm_get_bos(p->rdev, p->ib.vm,
 					      &p->validated);
 	if (need_mmap_lock)
-		mmap_read_lock(current->mm);
+		down_read(&current->mm->mmap_sem);
 
 	r = radeon_bo_list_validate(p->rdev, &p->ticket, &p->validated, p->ring);
 
 	if (need_mmap_lock)
-		mmap_read_unlock(current->mm);
+		up_read(&current->mm->mmap_sem);
 
 	return r;
 }
@@ -265,8 +265,7 @@ int radeon_cs_parser_init(struct radeon_cs_parser *p, void *data)
 {
 	struct drm_radeon_cs *cs = data;
 	uint64_t *chunk_array_ptr;
-	u64 size;
-	unsigned i;
+	unsigned size, i;
 	u32 ring = RADEON_CS_RING_GFX;
 	s32 priority = 0;
 

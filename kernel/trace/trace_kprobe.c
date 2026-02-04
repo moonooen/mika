@@ -112,9 +112,9 @@ bool trace_kprobe_on_func_entry(struct trace_event_call *call)
 {
 	struct trace_kprobe *tk = (struct trace_kprobe *)call->data;
 
-	return (kprobe_on_func_entry(tk->rp.kp.addr,
+	return kprobe_on_func_entry(tk->rp.kp.addr,
 			tk->rp.kp.addr ? NULL : tk->rp.kp.symbol_name,
-			tk->rp.kp.addr ? 0 : tk->rp.kp.offset) == 0);
+			tk->rp.kp.addr ? 0 : tk->rp.kp.offset);
 }
 
 bool trace_kprobe_error_injectable(struct trace_event_call *call)
@@ -201,7 +201,7 @@ static void FETCH_FUNC_NAME(memory, type)(struct pt_regs *regs,		\
 					  void *addr, void *dest)	\
 {									\
 	type retval;							\
-	if (get_kernel_nofault(retval, addr))				\
+	if (probe_kernel_address(addr, retval))				\
 		*(type *)dest = 0;					\
 	else								\
 		*(type *)dest = retval;					\
@@ -216,7 +216,6 @@ DEFINE_BASIC_FETCH_FUNCS(memory)
 static void FETCH_FUNC_NAME(memory, string)(struct pt_regs *regs,
 					    void *addr, void *dest)
 {
-	const void __user *uaddr =  (__force const void __user *)addr;
 	int maxlen = get_rloc_len(*(u32 *)dest);
 	u8 *dst = get_rloc_data(dest);
 	long ret;
@@ -224,7 +223,11 @@ static void FETCH_FUNC_NAME(memory, string)(struct pt_regs *regs,
 	if (!maxlen)
 		return;
 
-	ret = strncpy_from_user_nofault(dest, uaddr, maxlen);
+	/*
+	 * Try to get string again, since the string can be changed while
+	 * probing.
+	 */
+	ret = strncpy_from_unsafe(dst, addr, maxlen);
 
 	if (ret < 0) {	/* Failed to fetch string */
 		dst[0] = '\0';
@@ -514,7 +517,7 @@ disable_trace_kprobe(struct trace_kprobe *tk, struct trace_event_file *file)
 	return ret;
 }
 
-#if defined(CONFIG_DYNAMIC_FTRACE) && \
+#if defined(CONFIG_KPROBES_ON_FTRACE) && \
 	!defined(CONFIG_KPROBE_EVENTS_ON_NOTRACE)
 static bool __within_notrace_func(unsigned long addr)
 {
@@ -701,7 +704,7 @@ static int trace_kprobe_module_callback(struct notifier_block *nb,
 
 static struct notifier_block trace_kprobe_module_nb = {
 	.notifier_call = trace_kprobe_module_callback,
-	.priority = 2	/* Invoked after kprobe and jump_label module callback */
+	.priority = 1	/* Invoked after kprobe module callback */
 };
 
 /* Convert certain expected symbols into '_' when generating event names */
@@ -833,9 +836,8 @@ static int create_trace_kprobe(int argc, char **argv)
 			pr_info("Failed to parse either an address or a symbol.\n");
 			return ret;
 		}
-		/* Defer the ENOENT case until register kprobe */
 		if (offset && is_return &&
-		    kprobe_on_func_entry(NULL, symbol, offset) == -EINVAL) {
+		    !kprobe_on_func_entry(NULL, symbol, offset)) {
 			pr_info("Given offset is not valid for return probe.\n");
 			return -EINVAL;
 		}
@@ -1428,15 +1430,14 @@ static int kprobe_register(struct trace_event_call *event,
 static int kprobe_dispatcher(struct kprobe *kp, struct pt_regs *regs)
 {
 	struct trace_kprobe *tk = container_of(kp, struct trace_kprobe, rp.kp);
-	unsigned int flags = trace_probe_load_flag(&tk->tp);
 	int ret = 0;
 
 	raw_cpu_inc(*tk->nhit);
 
-	if (flags & TP_FLAG_TRACE)
+	if (tk->tp.flags & TP_FLAG_TRACE)
 		kprobe_trace_func(tk, regs);
 #ifdef CONFIG_PERF_EVENTS
-	if (flags & TP_FLAG_PROFILE)
+	if (tk->tp.flags & TP_FLAG_PROFILE)
 		ret = kprobe_perf_func(tk, regs);
 #endif
 	return ret;
@@ -1447,15 +1448,13 @@ static int
 kretprobe_dispatcher(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
 	struct trace_kprobe *tk = container_of(ri->rp, struct trace_kprobe, rp);
-	unsigned int flags;
 
 	raw_cpu_inc(*tk->nhit);
 
-	flags = trace_probe_load_flag(&tk->tp);
-	if (flags & TP_FLAG_TRACE)
+	if (tk->tp.flags & TP_FLAG_TRACE)
 		kretprobe_trace_func(tk, ri, regs);
 #ifdef CONFIG_PERF_EVENTS
-	if (flags & TP_FLAG_PROFILE)
+	if (tk->tp.flags & TP_FLAG_PROFILE)
 		kretprobe_perf_func(tk, ri, regs);
 #endif
 	return 0;	/* We don't tweek kernel, so just return 0 */

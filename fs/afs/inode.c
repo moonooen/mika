@@ -82,7 +82,7 @@ static int afs_inode_init_from_status(struct afs_vnode *vnode, struct key *key)
 	default:
 		printk("kAFS: AFS vnode with undefined type\n");
 		read_sequnlock_excl(&vnode->cb_lock);
-		return afs_protocol_error(NULL, -EBADMSG, afs_eproto_file_type);
+		return afs_protocol_error(NULL, -EBADMSG);
 	}
 
 	inode->i_blocks		= 0;
@@ -100,7 +100,7 @@ int afs_fetch_status(struct afs_vnode *vnode, struct key *key, bool new_inode)
 	struct afs_fs_cursor fc;
 	int ret;
 
-	_enter("%s,{%llx:%llu.%u,S=%lx}",
+	_enter("%s,{%x:%u.%u,S=%lx}",
 	       vnode->volume->name,
 	       vnode->fid.vid, vnode->fid.vnode, vnode->fid.unique,
 	       vnode->flags);
@@ -127,9 +127,9 @@ int afs_fetch_status(struct afs_vnode *vnode, struct key *key, bool new_inode)
 int afs_iget5_test(struct inode *inode, void *opaque)
 {
 	struct afs_iget_data *data = opaque;
-	struct afs_vnode *vnode = AFS_FS_I(inode);
 
-	return memcmp(&vnode->fid, &data->fid, sizeof(data->fid)) == 0;
+	return inode->i_ino == data->fid.vnode &&
+		inode->i_generation == data->fid.unique;
 }
 
 /*
@@ -150,14 +150,11 @@ static int afs_iget5_set(struct inode *inode, void *opaque)
 	struct afs_iget_data *data = opaque;
 	struct afs_vnode *vnode = AFS_FS_I(inode);
 
+	inode->i_ino = data->fid.vnode;
+	inode->i_generation = data->fid.unique;
 	vnode->fid = data->fid;
 	vnode->volume = data->volume;
 
-	/* YFS supports 96-bit vnode IDs, but Linux only supports
-	 * 64-bit inode numbers.
-	 */
-	inode->i_ino = data->fid.vnode;
-	inode->i_generation = data->fid.unique;
 	return 0;
 }
 
@@ -196,7 +193,7 @@ struct inode *afs_iget_pseudo_dir(struct super_block *sb, bool root)
 		return ERR_PTR(-ENOMEM);
 	}
 
-	_debug("GOT INODE %p { ino=%lu, vl=%llx, vn=%llx, u=%x }",
+	_debug("GOT INODE %p { ino=%lu, vl=%x, vn=%x, u=%x }",
 	       inode, inode->i_ino, data.fid.vid, data.fid.vnode,
 	       data.fid.unique);
 
@@ -255,8 +252,8 @@ static void afs_get_inode_cache(struct afs_vnode *vnode)
 
 	key.vnode_id		= vnode->fid.vnode;
 	key.unique		= vnode->fid.unique;
-	key.vnode_id_ext[0]	= vnode->fid.vnode >> 32;
-	key.vnode_id_ext[1]	= vnode->fid.vnode_hi;
+	key.vnode_id_ext[0]	= 0;
+	key.vnode_id_ext[1]	= 0;
 	aux.data_version	= vnode->status.data_version;
 
 	vnode->cache = fscache_acquire_cookie(vnode->volume->cache,
@@ -280,7 +277,7 @@ struct inode *afs_iget(struct super_block *sb, struct key *key,
 	struct inode *inode;
 	int ret;
 
-	_enter(",{%llx:%llu.%u},,", fid->vid, fid->vnode, fid->unique);
+	_enter(",{%x:%u.%u},,", fid->vid, fid->vnode, fid->unique);
 
 	as = sb->s_fs_info;
 	data.volume = as->volume;
@@ -292,7 +289,7 @@ struct inode *afs_iget(struct super_block *sb, struct key *key,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	_debug("GOT INODE %p { vl=%llx vn=%llx, u=%x }",
+	_debug("GOT INODE %p { vl=%x vn=%x, u=%x }",
 	       inode, fid->vid, fid->vnode, fid->unique);
 
 	vnode = AFS_FS_I(inode);
@@ -355,7 +352,7 @@ bad_inode:
  */
 void afs_zap_data(struct afs_vnode *vnode)
 {
-	_enter("{%llx:%llu}", vnode->fid.vid, vnode->fid.vnode);
+	_enter("{%x:%u}", vnode->fid.vid, vnode->fid.vnode);
 
 #ifdef CONFIG_AFS_FSCACHE
 	fscache_invalidate(vnode->cache);
@@ -385,7 +382,7 @@ int afs_validate(struct afs_vnode *vnode, struct key *key)
 	bool valid;
 	int ret;
 
-	_enter("{v={%llx:%llu} fl=%lx},%x",
+	_enter("{v={%x:%u} fl=%lx},%x",
 	       vnode->fid.vid, vnode->fid.vnode, vnode->flags,
 	       key_serial(key));
 
@@ -471,22 +468,9 @@ int afs_getattr(const struct path *path, struct kstat *stat,
 {
 	struct inode *inode = d_inode(path->dentry);
 	struct afs_vnode *vnode = AFS_FS_I(inode);
-	struct key *key;
-	int ret, seq = 0;
+	int seq = 0;
 
 	_enter("{ ino=%lu v=%u }", inode->i_ino, inode->i_generation);
-
-	if (vnode->volume &&
-	    !(query_flags & AT_STATX_DONT_SYNC) &&
-	    !test_bit(AFS_VNODE_CB_PROMISED, &vnode->flags)) {
-		key = afs_request_key(vnode->volume->cell);
-		if (IS_ERR(key))
-			return PTR_ERR(key);
-		ret = afs_validate(vnode, key);
-		key_put(key);
-		if (ret < 0)
-			return ret;
-	}
 
 	do {
 		read_seqbegin_or_lock(&vnode->cb_lock, &seq);
@@ -519,7 +503,7 @@ void afs_evict_inode(struct inode *inode)
 
 	vnode = AFS_FS_I(inode);
 
-	_enter("{%llx:%llu.%d}",
+	_enter("{%x:%u.%d}",
 	       vnode->fid.vid,
 	       vnode->fid.vnode,
 	       vnode->fid.unique);
@@ -571,7 +555,7 @@ int afs_setattr(struct dentry *dentry, struct iattr *attr)
 	struct key *key;
 	int ret;
 
-	_enter("{%llx:%llu},{n=%pd},%x",
+	_enter("{%x:%u},{n=%pd},%x",
 	       vnode->fid.vid, vnode->fid.vnode, dentry,
 	       attr->ia_valid);
 

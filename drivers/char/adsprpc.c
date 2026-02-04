@@ -780,10 +780,6 @@ static int fastrpc_mmap_find(struct fastrpc_file *fl, int fd,
 	if ((va + len) < va)
 		return -EOVERFLOW;
 
-	if ((mflags == ADSP_MMAP_HEAP_ADDR) ||
-		(mflags == ADSP_MMAP_REMOTE_HEAP_ADDR))
-		return -EFAULT;
-
 	hlist_for_each_entry_safe(map, n, &fl->maps, hn) {
 		if (va >= map->va &&
 			va + len <= map->va + map->len &&
@@ -904,11 +900,9 @@ static void fastrpc_mmap_free(struct fastrpc_mmap *map, uint32_t flags)
 			map->refs--;
 		if (!map->refs)
 			hlist_del_init(&map->hn);
-		if (map->refs > 0) {
-			spin_unlock(&me->hlock);
-			return;
-		}
 		spin_unlock(&me->hlock);
+		if (map->refs > 0)
+			return;
 	} else {
 		if (map->refs)
 			map->refs--;
@@ -1030,12 +1024,6 @@ static int fastrpc_mmap_create(struct fastrpc_file *fl, int fd,
 		map->size = len;
 		map->va = (uintptr_t)region_vaddr;
 	} else if (mflags == FASTRPC_DMAHANDLE_NOMAP) {
-		if (map->attr & FASTRPC_ATTR_KEEP_MAP) {
-			pr_err("adsprpc: %s: Invalid attribute 0x%x for fd %d\n",
-				__func__, map->attr, fd);
-			err = -EINVAL;
-			goto bail;
-		}
 		VERIFY(err, !IS_ERR_OR_NULL(map->buf = dma_buf_get(fd)));
 		if (err)
 			goto bail;
@@ -2185,12 +2173,12 @@ static void inv_args(struct smq_invoke_ctx *ctx)
 					uint64_t inv_len;
 					struct vm_area_struct *vma;
 
-					mmap_read_lock(current->mm);
+					down_read(&current->mm->mmap_sem);
 					VERIFY(err, NULL != (vma = find_vma(
 						current->mm,
 						rpra[over].buf.pv)));
 					if (err) {
-						mmap_read_unlock(current->mm);
+						up_read(&current->mm->mmap_sem);
 						goto bail;
 					}
 					if (ctx->overps[i]->do_cmo) {
@@ -2205,7 +2193,7 @@ static void inv_args(struct smq_invoke_ctx *ctx)
 							ctx->overps[i]->mend -
 							ctx->overps[i]->mstart;
 					}
-					mmap_read_unlock(current->mm);
+					up_read(&current->mm->mmap_sem);
 					dma_buf_begin_cpu_access_partial(
 						map->buf, DMA_TO_DEVICE, offset,
 						inv_len);

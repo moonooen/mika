@@ -68,16 +68,15 @@ static void enqueue_external_timestamp(struct timestamp_event_queue *queue,
 	dst->t.sec = seconds;
 	dst->t.nsec = remainder;
 
-	/* Both WRITE_ONCE() are paired with READ_ONCE() in queue_cnt() */
 	if (!queue_free(queue))
-		WRITE_ONCE(queue->head, (queue->head + 1) % PTP_MAX_TIMESTAMPS);
+		queue->head = (queue->head + 1) % PTP_MAX_TIMESTAMPS;
 
-	WRITE_ONCE(queue->tail, (queue->tail + 1) % PTP_MAX_TIMESTAMPS);
+	queue->tail = (queue->tail + 1) % PTP_MAX_TIMESTAMPS;
 
 	spin_unlock_irqrestore(&queue->lock, flags);
 }
 
-long scaled_ppm_to_ppb(long ppm)
+static s32 scaled_ppm_to_ppb(long ppm)
 {
 	/*
 	 * The 'freq' field in the 'struct timex' is in parts per
@@ -94,9 +93,8 @@ long scaled_ppm_to_ppb(long ppm)
 	s64 ppb = 1 + ppm;
 	ppb *= 125;
 	ppb >>= 13;
-	return (long) ppb;
+	return (s32) ppb;
 }
-EXPORT_SYMBOL(scaled_ppm_to_ppb);
 
 /* posix clock implementation */
 
@@ -149,7 +147,7 @@ static int ptp_clock_adjtime(struct posix_clock *pc, struct timex *tx)
 		delta = ktime_to_ns(kt);
 		err = ops->adjtime(ops, delta);
 	} else if (tx->modes & ADJ_FREQUENCY) {
-		long ppb = scaled_ppm_to_ppb(tx->freq);
+		s32 ppb = scaled_ppm_to_ppb(tx->freq);
 		if (ppb > ops->max_adj || ppb < -ops->max_adj)
 			return -ERANGE;
 		if (ops->adjfine)
@@ -186,11 +184,6 @@ static void ptp_clock_release(struct device *dev)
 	mutex_destroy(&ptp->pincfg_mux);
 	ida_simple_remove(&ptp_clocks_map, ptp->index);
 	kfree(ptp);
-}
-
-static int ptp_enable(struct ptp_clock_info *ptp, struct ptp_clock_request *request, int on)
-{
-	return -EOPNOTSUPP;
 }
 
 static void ptp_aux_kworker(struct kthread_work *work)
@@ -237,9 +230,6 @@ struct ptp_clock *ptp_clock_register(struct ptp_clock_info *info,
 	mutex_init(&ptp->tsevq_mux);
 	mutex_init(&ptp->pincfg_mux);
 	init_waitqueue_head(&ptp->tsev_wq);
-
-	if (!ptp->info->enable)
-		ptp->info->enable = ptp_enable;
 
 	if (ptp->info->do_aux_work) {
 		char *worker_name = kasprintf(GFP_KERNEL, "ptp%d", ptp->index);

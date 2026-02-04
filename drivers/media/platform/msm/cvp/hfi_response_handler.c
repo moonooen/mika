@@ -480,7 +480,7 @@ static int hfi_process_session_cvp_msg(u32 device_id,
 	struct cvp_session_msg *sess_msg;
 	struct msm_cvp_inst *inst = NULL;
 	struct msm_cvp_core *core;
-	unsigned int session_id;
+	void *session_id;
 
 	if (!pkt) {
 		dprintk(CVP_ERR, "%s: invalid param\n", __func__);
@@ -489,9 +489,9 @@ static int hfi_process_session_cvp_msg(u32 device_id,
 		dprintk(CVP_ERR, "%s: bad_pkt_size %d\n", __func__, pkt->size);
 		return -E2BIG;
 	}
-	session_id = get_msg_session_id(pkt);
+	session_id = (void *)(uintptr_t)get_msg_session_id(pkt);
 	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
-	inst = cvp_get_inst_from_id(core, session_id);
+	inst = cvp_get_inst_from_id(core, (unsigned int)session_id);
 
 	if (!inst) {
 		dprintk(CVP_ERR, "%s: invalid session\n", __func__);
@@ -504,7 +504,6 @@ static int hfi_process_session_cvp_msg(u32 device_id,
 			|| pkt->packet_type == HFI_MSG_SESSION_CVP_FD) {
 			u64 ktid;
 			u32 kdata1, kdata2;
-			int rc;
 
 			kdata1 = pkt->client_data.kdata1;
 			kdata2 = pkt->client_data.kdata2;
@@ -516,10 +515,8 @@ static int hfi_process_session_cvp_msg(u32 device_id,
 
 			msm_cvp_unmap_buf_cpu(inst, ktid);
 
-			rc = _deprecated_hfi_msg_process(device_id, pkt, info,
-							 inst);
-			cvp_put_inst(inst);
-			return rc;
+			return _deprecated_hfi_msg_process(device_id,
+				pkt, info, inst);
 		}
 		dprintk(CVP_ERR, "Invalid deprecate_bitmask %#x\n",
 					inst->deprecate_bitmask);
