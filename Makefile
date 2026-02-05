@@ -724,9 +724,16 @@ KBUILD_CFLAGS   += -Os
 KBUILD_AFLAGS   += -Os
 KBUILD_LDFLAGS  += -Os
 else
-KBUILD_CFLAGS   += -O3 -march=armv8.2-a+crypto+fp16 -fno-trapping-math -fno-math-errno -mllvm -polly
-KBUILD_AFLAGS   += -O3 -march=armv8.2-a+crypto+fp16
-KBUILD_LDFLAGS  += -O3,-Bsymbolic-functions,--as-needed -mllvm -polly
+KBUILD_CFLAGS   += -O3 -mcpu=cortex-a77+crc+crypto -mtune=cortex-a77 \
+                   -march=armv8.2-a+crc+crypto+lse+rdm+rcpc+dotprod+fp16 \
+                   -fno-trapping-math -fno-math-errno -funroll-loops \
+                   -mllvm -polly
+
+KBUILD_AFLAGS   += -O3 -mcpu=cortex-a77+crc+crypto \
+                   -march=armv8.2-a+crc+crypto+lse+rdm+rcpc+dotprod+fp16 \
+                   -funroll-loops
+
+KBUILD_LDFLAGS  += -O3 -Bsymbolic-functions --as-needed -mllvm -polly
 endif
 
 ifdef CONFIG_CC_WERROR
