@@ -5221,9 +5221,12 @@ static int fg_psy_get_property(struct power_supply *psy,
 					power_supply_changed(fg->fg_psy);
 			}
 		}
-		break;
+                break;
 	case POWER_SUPPLY_PROP_REAL_CAPACITY:
 		rc = fg_gen4_get_prop_real_capacity(fg, &pval->intval);
+         	break;
+        case POWER_SUPPLY_PROP_SCOPE:
+                pval->intval = POWER_SUPPLY_SCOPE_SYSTEM;
 		break;
 	case POWER_SUPPLY_PROP_SHUTDOWN_DELAY:
 		pval->intval = fg->shutdown_delay;
@@ -5560,6 +5563,7 @@ static enum power_supply_property fg_psy_props[] = {
 #endif
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_REAL_CAPACITY,
+	POWER_SUPPLY_PROP_SCOPE,
 	POWER_SUPPLY_PROP_SHUTDOWN_DELAY,
 	POWER_SUPPLY_PROP_CAPACITY_RAW,
 	POWER_SUPPLY_PROP_SOC_DECIMAL,

@@ -1892,6 +1892,7 @@ static enum power_supply_property smb5_usb_port_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX,
 	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_SCOPE,
 };
 
 static int smb5_usb_port_get_prop(struct power_supply *psy,
@@ -1929,6 +1930,9 @@ static int smb5_usb_port_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
 		rc = smblib_get_prop_input_current_settled(chg, val);
 		break;
+	case POWER_SUPPLY_PROP_SCOPE:
+                val->intval = POWER_SUPPLY_SCOPE_UNKNOWN;
+                break;
 	default:
 		pr_err_ratelimited("Get prop %d is not supported in pc_port\n",
 				psp);
