@@ -454,6 +454,10 @@ KBUILD_CFLAGS += -fno-semantic-interposition \
                  -fomit-frame-pointer \
                  -fstrict-aliasing
 
+KBUILD_CFLAGS += -fno-builtin-malloc \
+		 -fno-builtin-calloc \
+		 -fno-builtin-realloc
+
 KBUILD_CPPFLAGS := -D__KERNEL__
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
@@ -724,11 +728,7 @@ KBUILD_CFLAGS	+= $(call cc-disable-warning, format-overflow)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, int-in-bool-context)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, address-of-packed-member)
 
-ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
-KBUILD_CFLAGS   += -Os
-KBUILD_AFLAGS   += -Os
-KBUILD_LDFLAGS  += -Os
-else
+ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 KBUILD_CFLAGS   += -O3 -mcpu=cortex-a77+crc+crypto -mtune=cortex-a77 \
                    -march=armv8.2-a+crc+crypto+lse+rdm+rcpc+dotprod+fp16 \
                    -fno-trapping-math -fno-math-errno -funroll-loops \
