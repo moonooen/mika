@@ -451,8 +451,7 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -std=gnu89 -pipe
 
 KBUILD_CFLAGS += -fno-semantic-interposition \
-                 -fomit-frame-pointer \
-                 -fstrict-aliasing
+                 -fomit-frame-pointer
 
 KBUILD_CFLAGS += -fno-builtin-malloc \
 		 -fno-builtin-calloc \
