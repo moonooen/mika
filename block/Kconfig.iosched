@@ -50,7 +50,7 @@ config IOSCHED_ANXIETY
 
 config IOSCHED_ZEN
 	tristate "Zen I/O scheduler"
-	default n
+	default y
 	---help---
 	FCFS, dispatches are back-inserted, deadlines ensure fairness.
         Should work best with devices where there is no travel delay.
@@ -58,7 +58,7 @@ config IOSCHED_ZEN
 choice
 
 	prompt "Default I/O scheduler"
-	default DEFAULT_ANXIETY
+	default DEFAULT_ZEN
 	help
 	  Select the I/O scheduler which will be used by default for all
 	  block devices.
