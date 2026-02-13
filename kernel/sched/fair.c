@@ -9113,9 +9113,6 @@ static void attach_task(struct rq *rq, struct task_struct *p,
 static void attach_task(struct rq *rq, struct task_struct *p)	
 #endif
 {
-#ifdef CONFIG_SONY_SCHED
-        trace_printk("SONY_SCHED: ok pid=%d to cpu=%d\n", p->pid, rq->cpu);
-#endif
 	lockdep_assert_held(&rq->lock);
 
 	BUG_ON(task_rq(p) != rq);
