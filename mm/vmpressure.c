@@ -338,15 +338,13 @@ static void vmpressure_memcg(gfp_t gfp, struct mem_cgroup *memcg, bool critical,
 		}
 	}
 }
+
 #else
 static void vmpressure_memcg(gfp_t gfp, struct mem_cgroup *memcg, bool critical,
-			     bool tree, unsigned long scanned,
-			     unsigned long reclaimed) { }
+                             bool tree, unsigned long scanned,
+                             unsigned long reclaimed) { }
 #endif
 
-static unsigned long calculate_vmpressure_win(void)
-{
-        long x;
 bool vmpressure_inc_users(int order)
 {
         struct vmpressure *vmpr = &global_vmpressure;
@@ -376,20 +374,6 @@ void vmpressure_dec_users(void)
         /* Decrement the vmpressure user count with release semantics */
         smp_mb__before_atomic();
         atomic_long_dec(&vmpr->users);
-}
-
-static unsigned long calculate_vmpressure_win(void)
-{
-        long x;
-
-        x = global_node_page_state(NR_FILE_PAGES) -
-                        global_node_page_state(NR_SHMEM) -
-                        total_swapcache_pages() +
-                        global_zone_page_state(NR_FREE_PAGES);
-        if (x < 1)
-                x = 1;
-
-        return int_sqrt(x);
 }
 
 static void vmpressure_global(gfp_t gfp, unsigned long scanned, bool critical,
@@ -430,93 +414,6 @@ static void vmpressure_global(gfp_t gfp, unsigned long scanned, bool critical,
         }
         vmpressure_notify(pressure);
 }
-
-static void vmpressure_global(gfp_t gfp, unsigned long scanned, bool critical,
-                unsigned long reclaimed)
-{
-        struct vmpressure *vmpr = &global_vmpressure;
-        unsigned long pressure;
-        unsigned long stall = 0;
-
-        if (critical)
-                scanned = calculate_vmpressure_win();
-
-        spin_lock(&vmpr->sr_lock);
-        if (scanned) {
-                vmpr->scanned += scanned;
-                vmpr->reclaimed += reclaimed;
-
-                if (!current_is_kswapd())
-                        vmpr->stall += scanned;
-
-                stall = vmpr->stall;
-                scanned = vmpr->scanned;
-                reclaimed = vmpr->reclaimed;
-
-                if (!critical && scanned < calculate_vmpressure_win()) {
-                        spin_unlock(&vmpr->sr_lock);
-                        return;
-                }
-        }
-
-        vmpr->scanned = 0;
-        vmpr->reclaimed = 0;
-        vmpr->stall = 0;
-        spin_unlock(&vmpr->sr_lock);
-
-        if (scanned) {
-                pressure = vmpressure_calc_pressure(scanned, reclaimed);
-                pressure = vmpressure_account_stall(pressure, stall, scanned);
-        } else {
-                pressure = 100;
-        }
-
-        vmpressure_notify(pressure);
-}
-
-static void vmpressure_global(gfp_t gfp, unsigned long scanned, bool critical,
-                unsigned long reclaimed)
-{
-        struct vmpressure *vmpr = &global_vmpressure;
-        unsigned long pressure;
-        unsigned long stall;
-
-        if (critical)
-                scanned = calculate_vmpressure_win();
-
-        if (scanned) {
-                spin_lock(&vmpr->sr_lock);
-                vmpr->scanned += scanned;
-                vmpr->reclaimed += reclaimed;
-
-                if (!current_is_kswapd())
-                        vmpr->stall += scanned;
-
-                stall = vmpr->stall;
-                scanned = vmpr->scanned;
-                reclaimed = vmpr->reclaimed;
-                spin_unlock(&vmpr->sr_lock);
-
-                if (!critical && scanned < calculate_vmpressure_win())
-                        return;
-
-                spin_lock(&vmpr->sr_lock);
-                vmpr->scanned = 0;
-                vmpr->reclaimed = 0;
-                vmpr->stall = 0;
-                spin_unlock(&vmpr->sr_lock);
-        }
-
-        if (scanned) {
-                pressure = vmpressure_calc_pressure(scanned, reclaimed);
-                pressure = vmpressure_account_stall(pressure, stall, scanned);
-        } else {
-                pressure = 100;
-        }
-
-        vmpressure_notify(pressure);
-}
-
 
 static void __vmpressure(gfp_t gfp, struct mem_cgroup *memcg, bool critical,
 			 bool tree, unsigned long scanned,
