@@ -178,7 +178,7 @@ collect_files()
 
 if $scm_only; then
 	if test ! -e .scmversion; then
-		res=$(scm_version)
+		res=
 		echo "$res" >.scmversion
 	fi
 	exit
@@ -203,14 +203,14 @@ res="${res}${CONFIG_LOCALVERSION}${LOCALVERSION}"
 # scm version string if not at a tagged commit
 if test "$CONFIG_LOCALVERSION_AUTO" = "y"; then
 	# full scm version string
-	res="$res$(scm_version)"
+	res="$res"
 else
 	# append a plus sign if the repository is not in a clean
 	# annotated or signed tagged state (as git describe only
 	# looks at signed or annotated tags - git tag -a/-s) and
 	# LOCALVERSION= is not specified
 	if test "${LOCALVERSION+set}" != "set"; then
-		scm=$(scm_version --short)
+		scm=
 		res="$res${scm:++}"
 	fi
 fi
