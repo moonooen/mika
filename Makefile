@@ -453,10 +453,6 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 KBUILD_CFLAGS += -fno-semantic-interposition \
                  -fomit-frame-pointer
 
-KBUILD_CFLAGS += -fno-builtin-malloc \
-		 -fno-builtin-calloc \
-		 -fno-builtin-realloc
-
 KBUILD_CPPFLAGS := -D__KERNEL__
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
