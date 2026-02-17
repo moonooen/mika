@@ -290,31 +290,43 @@ struct device_attribute *attr, char *buf)
 static ssize_t bump_sample_rate_store(struct device *dev,
 struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct xiaomi_touch_pdata *pdata = dev_get_drvdata(dev);
-	struct xiaomi_touch_interface *touch_data = pdata->touch_data;
-	int input;
-	int ret;
+    struct xiaomi_touch_pdata *pdata = dev_get_drvdata(dev);
+    struct xiaomi_touch_interface *touch_data = pdata->touch_data;
+    int input;
+    int ret;
 
-	ret = sscanf(buf, "%d", &input);
+    if (!touch_data || !touch_data->setModeValue || !touch_data->resetMode)
+        return -ENODEV;
 
-	if (ret < 0)
-		return -EINVAL; // Avoid possible crashes
+    ret = sscanf(buf, "%d", &input);
+    if (ret <= 0)
+        return -EINVAL;
 
-	if(input) {
-		pdata->bump_sample_rate = true;
-		pdata->set_update = true;
-		touch_data->setModeValue(0, 1);
-		touch_data->setModeValue(1, 1);
-		touch_data->setModeValue(3, 34);
-		touch_data->setModeValue(2, 99);
-		touch_data->setModeValue(7, 0);
-	} else {
-		pdata->bump_sample_rate = false;
-		pdata->set_update = false;
-		touch_data->resetMode(0);
-	}
+    if (input) {
+        if (pdata->bump_sample_rate != true) {
+            pdata->bump_sample_rate = true;
+            pdata->set_update = true;
 
-	return count;
+            trace_printk("MIKA touch OK\n");
+
+            touch_data->setModeValue(0, 1);
+            touch_data->setModeValue(1, 1);
+            touch_data->setModeValue(3, 34);
+            touch_data->setModeValue(2, 99);
+            touch_data->setModeValue(7, 0);
+        }
+    } else {
+        if (pdata->bump_sample_rate != false) {
+            pdata->bump_sample_rate = false;
+            pdata->set_update = true;
+
+            trace_printk("MIKA resetting OK\n");
+
+            touch_data->resetMode(0);
+        }
+    }
+
+    return count;
 }
 
 int update_p_sensor_value(int value)
