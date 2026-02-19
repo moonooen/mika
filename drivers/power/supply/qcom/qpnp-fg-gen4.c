@@ -7043,7 +7043,7 @@ static void fg_battery_soc_smooth_tracking(struct fg_gen4_chip *chip)
 	struct timespec last_change_time = fg->param.last_soc_change_time;
 
 	calculate_delta_time(&last_change_time, &time_since_last_change_sec);
-	pr_info("entry:smooth_batt_soc%d\n", fg->param.smooth_batt_soc);
+	trace_printk("entry:smooth_batt_soc%d\n", fg->param.smooth_batt_soc);
 
 	/* calculate average ibat */
 	calculate_average_current(chip);
