@@ -35,7 +35,7 @@
 #define ds_info pr_info
 #define ds_dbg pr_debug
 #define ds_err pr_err
-#define ds_log pr_debug
+#define ds_log(fmt, ...) pr_debug_ratelimited(fmt, ##__VA_ARGS__)
 
 struct ds28e16_data {
 	struct platform_device *pdev;
