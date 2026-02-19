@@ -412,8 +412,6 @@ static bool fg_esr_fast_cal_en;
 
 static int fg_gen4_validate_soc_scale_mode(struct fg_gen4_chip *chip);
 static int fg_gen4_esr_fast_calib_config(struct fg_gen4_chip *chip, bool en);
-static int fg_gen4_configure_cutoff_current(struct fg_dev *fg, int current_ma);
-static int fg_gen4_rapid_soc_config(struct fg_gen4_chip *chip, bool en);
 
 static struct fg_sram_param pm8150b_v1_sram_params[] = {
 	PARAM(BATT_SOC, BATT_SOC_WORD, BATT_SOC_OFFSET, 4, 1, 1, 0, NULL,
@@ -1226,23 +1224,6 @@ static int fg_gen4_get_prop_soc_scale(struct fg_gen4_chip *chip)
 	chip->vbatt_res = chip->vbatt_avg - chip->dt.cutoff_volt_mv;
 	fg_dbg(fg, FG_FVSS, "Vbatt now=%d Vbatt avg=%d Vbatt res=%d\n",
 		chip->vbatt_now, chip->vbatt_avg, chip->vbatt_res);
-
-	/* Exit rapid soc decrease mode when battery voltage > 3700mV to recover real soc value */
-	if (chip->vbatt_avg > 3650) {
-		if (chip->dt.rapid_soc_dec_en) {
-			if(chip->rapid_soc_dec_en) {
-				fg_dbg(fg, FG_STATUS, "Vbatt > 3650, exit rapid soc decrease\n", fg->charge_status);
-				rc = fg_gen4_rapid_soc_config(chip, false);
-				if (rc < 0)
-					pr_err("Error in configuring for rapid SOC reduction rc:%d\n",
-						rc);
-				chip->rapid_soc_dec_en = false;
-			}
-		} else if (chip->vbatt_low) {
-			fg_dbg(fg, FG_STATUS, "Vbatt > 3650, reset vbatt_low = false\n", fg->charge_status);
-			chip->vbatt_low = false;
-		}
-	}
 
 	return rc;
 }
@@ -2177,14 +2158,14 @@ static int fg_gen4_get_batt_profile(struct fg_dev *fg)
 				profile_node = of_batterydata_get_best_profile(batt_node,
 						fg->batt_id_ohms / 1000, "j2gybm4n_4780mah");
 			} else {
-				if (chip->dt.k11a_batt_profile) {
-					pr_warn("verifty battery fail. use default profile k11a_fmt_4520mah\n");
-					profile_node = of_batterydata_get_best_profile(batt_node,
-						fg->batt_id_ohms / 1000, "K11A_FMT_4520mah");
-				} else if (chip->dt.j3s_batt_profile) {
+				if (chip->dt.j3s_batt_profile) {
 					pr_warn("verifty battery fail. use default profile j3ssun_5000mah\n");
 					profile_node = of_batterydata_get_best_profile(batt_node,
 						fg->batt_id_ohms / 1000, "j3ssun_5000mah");
+				} else if (chip->dt.k11a_batt_profile) {
+					pr_warn("verifty battery fail. use default profile k11a_fmt_4520mah\n");
+					profile_node = of_batterydata_get_best_profile(batt_node,
+						fg->batt_id_ohms / 1000, "K11A_FMT_4520mah");
 				} else {
 					pr_warn("verifty battery fail. use default profile j11sun_4700mah\n");
 					profile_node = of_batterydata_get_best_profile(batt_node,
