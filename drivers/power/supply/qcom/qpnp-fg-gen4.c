@@ -7186,7 +7186,7 @@ static void fg_battery_soc_smooth_tracking(struct fg_gen4_chip *chip)
 			power_supply_changed(fg->batt_psy);
 	}
 
-	pr_info("soc:%d, last_soc:%d, raw_soc:%d, soc_changed:%d, batt_ma:%d, smooth_low_batt_soc:%d, smooth_soc: %d\n",
+	trace_printk("FG_ok: soc:%d, last_soc:%d, raw_soc:%d, soc_changed:%d, batt_ma:%d, smooth_low_batt_soc:%d, smooth_soc: %d\n",
 				fg->param.batt_soc, last_batt_soc,
 				fg->param.batt_raw_soc, soc_changed, fg->param.batt_ma, fg->param.smooth_low_batt_soc, fg->param.smooth_batt_soc);
 }
