@@ -3226,7 +3226,7 @@ static bool blk_mq_poll_hybrid_sleep(struct request_queue *q,
 static bool __blk_mq_poll(struct blk_mq_hw_ctx *hctx, struct request *rq)
 {
 	struct request_queue *q = hctx->queue;
-	unsigned int state;
+	long state;
 
 	/*
 	 * If we sleep, have the caller restart the poll loop to reset
