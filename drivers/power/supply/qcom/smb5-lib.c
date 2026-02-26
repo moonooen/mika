@@ -10436,8 +10436,9 @@ static void smblib_charger_type_recheck(struct work_struct *work)
 		return;
 	}
 
-	if (smblib_get_prop_dfp_mode(chg) != POWER_SUPPLY_TYPEC_NONE)
+	if (smblib_get_prop_dfp_mode(chg) != POWER_SUPPLY_TYPEC_NONE) {
 		goto check_next;
+	}
 
 		if (chg->typec_port && !chg->pr_swap_in_progress) {
 
