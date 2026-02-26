@@ -111,8 +111,7 @@ static void set_sched_affinity_to_all(void)
 {
 	long ret;
 
-    cpumask_setall(&dstp);
-    ret = sched_setaffinity(CURRENT_DS28E16_TASK, &dstp);
+    ret = sched_setaffinity(CURRENT_DS28E16_TASK, cpu_online_mask);
     if(ret) {
         pr_debug("Setting cpu affinity to all valid cpus failed(%ld) in %s.\n", ret, __func__);
     } else {
