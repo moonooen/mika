@@ -620,6 +620,7 @@ static inline void ufshcd_remove_non_printable(char *val)
 		*val = ' ';
 }
 
+#ifdef CONFIG_TRACING
 static void ufshcd_add_cmd_upiu_trace(struct ufs_hba *hba, unsigned int tag,
 		const char *str)
 {
@@ -645,12 +646,13 @@ static void ufshcd_add_tm_upiu_trace(struct ufs_hba *hba, unsigned int tag,
 	trace_ufshcd_upiu(dev_name(hba->dev), str, &descp->req_header,
 			&descp->input_param1);
 }
+#endif
 
-#define UFSHCD_MAX_CMD_LOGGING	200
+#define UFSHCD_MAX_CMD_LOGGING  200
 
 #ifdef CONFIG_TRACEPOINTS
 static inline void ufshcd_add_command_trace(struct ufs_hba *hba,
-			struct ufshcd_cmd_log_entry *entry)
+					    struct ufshcd_cmd_log_entry *entry)
 {
 	if (trace_ufshcd_command_enabled()) {
 		u32 intr = ufshcd_readl(hba, REG_INTERRUPT_STATUS);
@@ -660,152 +662,23 @@ static inline void ufshcd_add_command_trace(struct ufs_hba *hba,
 				     entry->lba, entry->cmd_id);
 	}
 }
-#else
-static inline void ufshcd_add_command_trace(struct ufs_hba *hba,
-			struct ufshcd_cmd_log_entry *entry)
-{
-}
-#endif
 
-#ifdef CONFIG_SCSI_UFSHCD_CMD_LOGGING
-static void ufshcd_cmd_log_init(struct ufs_hba *hba)
-{
-	/* Allocate log entries */
-	if (!hba->cmd_log.entries) {
-		hba->cmd_log.entries = kcalloc(UFSHCD_MAX_CMD_LOGGING,
-			sizeof(struct ufshcd_cmd_log_entry), GFP_KERNEL);
-		if (!hba->cmd_log.entries)
-			return;
-		dev_dbg(hba->dev, "%s: cmd_log.entries initialized\n",
-				__func__);
-	}
-}
-
-static void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
-			     unsigned int tag, u8 cmd_id, u8 idn, u8 lun,
-			     sector_t lba, int transfer_len)
-{
-	struct ufshcd_cmd_log_entry *entry;
-
-	if (!hba->cmd_log.entries)
-		return;
-
-	entry = &hba->cmd_log.entries[hba->cmd_log.pos];
-	entry->lun = lun;
-	entry->str = str;
-	entry->cmd_type = cmd_type;
-	entry->cmd_id = cmd_id;
-	entry->lba = lba;
-	entry->transfer_len = transfer_len;
-	entry->idn = idn;
-	entry->doorbell = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL);
-	entry->tag = tag;
-	entry->tstamp = ktime_get();
-	entry->outstanding_reqs = hba->outstanding_reqs;
-	entry->seq_num = hba->cmd_log.seq_num;
-	hba->cmd_log.seq_num++;
-	hba->cmd_log.pos =
-			(hba->cmd_log.pos + 1) % UFSHCD_MAX_CMD_LOGGING;
-
-	ufshcd_add_command_trace(hba, entry);
-}
-
-static void ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
-	unsigned int tag, u8 cmd_id, u8 idn)
-{
-	__ufshcd_cmd_log(hba, str, cmd_type, tag, cmd_id, idn, 0, 0, 0);
-}
-
-static void ufshcd_dme_cmd_log(struct ufs_hba *hba, char *str, u8 cmd_id)
-{
-	ufshcd_cmd_log(hba, str, "dme", 0, cmd_id, 0);
-}
-
-static void ufshcd_custom_cmd_log(struct ufs_hba *hba, char *str)
-{
-	ufshcd_cmd_log(hba, str, "custom", 0, 0, 0);
-}
-
-static void ufshcd_print_cmd_log(struct ufs_hba *hba)
-{
-	int i;
-	int pos;
-	struct ufshcd_cmd_log_entry *p;
-
-	if (!hba->cmd_log.entries)
-		return;
-
-	pos = hba->cmd_log.pos;
-	for (i = 0; i < UFSHCD_MAX_CMD_LOGGING; i++) {
-		p = &hba->cmd_log.entries[pos];
-		pos = (pos + 1) % UFSHCD_MAX_CMD_LOGGING;
-
-		if (ktime_to_us(p->tstamp)) {
-			pr_err("%s: %s: seq_no=%u lun=0x%x cmd_id=0x%02x lba=0x%llx txfer_len=%d tag=%u, doorbell=0x%x outstanding=0x%x idn=%d time=%lld us\n",
-				p->cmd_type, p->str, p->seq_num,
-				p->lun, p->cmd_id, (unsigned long long)p->lba,
-				p->transfer_len, p->tag, p->doorbell,
-				p->outstanding_reqs, p->idn,
-				ktime_to_us(p->tstamp));
-				usleep_range(1000, 1100);
-		}
-	}
-}
-#else
-static void ufshcd_cmd_log_init(struct ufs_hba *hba)
-{
-}
-
-static void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
-			     unsigned int tag, u8 cmd_id, u8 idn, u8 lun,
-			     sector_t lba, int transfer_len)
-{
-	struct ufshcd_cmd_log_entry entry;
-
-	entry.str = str;
-	entry.lba = lba;
-	entry.cmd_id = cmd_id;
-	entry.transfer_len = transfer_len;
-	entry.doorbell = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL);
-	entry.tag = tag;
-
-	ufshcd_add_command_trace(hba, &entry);
-}
-
-static void ufshcd_dme_cmd_log(struct ufs_hba *hba, char *str, u8 cmd_id)
-{
-}
-
-static void ufshcd_custom_cmd_log(struct ufs_hba *hba, char *str)
-{
-}
-
-static void ufshcd_print_cmd_log(struct ufs_hba *hba)
-{
-}
-#endif
-
-#ifdef CONFIG_TRACEPOINTS
 static inline void ufshcd_cond_add_cmd_trace(struct ufs_hba *hba,
-					unsigned int tag, const char *str)
+					    unsigned int tag, const char *str)
 {
 	struct ufshcd_lrb *lrbp = &hba->lrb[tag];
 	char *cmd_type = NULL;
-	u8 opcode = 0;
-	u8 cmd_id = 0, idn = 0;
+	u8 opcode = 0, cmd_id = 0, idn = 0;
 	sector_t lba = 0;
 	struct scsi_cmnd *cmd = lrbp->cmd;
 	int transfer_len = 0;
 
-	if (cmd) { /* data phase exists */
-		/* trace UPIU also */
+	if (cmd) {
+#ifdef CONFIG_TRACING
 		ufshcd_add_cmd_upiu_trace(hba, tag, str);
+#endif
 		opcode = cmd->cmnd[0];
 		if ((opcode == READ_10) || (opcode == WRITE_10)) {
-			/*
-			 * Currently we only fully trace read(10) and write(10)
-			 * commands
-			 */
 			if (cmd->request && cmd->request->bio)
 				lba = cmd->request->bio->bi_iter.bi_sector;
 			transfer_len = be32_to_cpu(
@@ -832,10 +705,87 @@ static inline void ufshcd_cond_add_cmd_trace(struct ufs_hba *hba,
 			 lrbp->lun, lba, transfer_len);
 }
 #else
+static inline void ufshcd_add_command_trace(struct ufs_hba *hba,
+					    struct ufshcd_cmd_log_entry *entry) {}
 static inline void ufshcd_cond_add_cmd_trace(struct ufs_hba *hba,
-					unsigned int tag, const char *str)
+					    unsigned int tag, const char *str) {}
+#endif
+
+#ifdef CONFIG_TRACING
+static void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
+			     unsigned int tag, u8 cmd_id, u8 idn, u8 lun,
+			     sector_t lba, int transfer_len)
 {
+	struct ufshcd_cmd_log_entry *entry;
+
+	if (!hba->cmd_log.entries)
+		return;
+	entry = &hba->cmd_log.entries[hba->cmd_log.pos];
+	entry->lun = lun;
+	entry->str = str;
+	entry->cmd_type = cmd_type;
+	entry->cmd_id = cmd_id;
+	entry->lba = lba;
+	entry->transfer_len = transfer_len;
+	entry->idn = idn;
+	entry->doorbell = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL);
+	entry->tag = tag;
+	entry->tstamp = ktime_get();
+	entry->outstanding_reqs = hba->outstanding_reqs;
+	entry->seq_num = hba->cmd_log.seq_num;
+	hba->cmd_log.seq_num++;
+	hba->cmd_log.pos = (hba->cmd_log.pos + 1) % UFSHCD_MAX_CMD_LOGGING;
+
+	ufshcd_add_command_trace(hba, entry);
 }
+
+static void ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
+			   unsigned int tag, u8 cmd_id, u8 idn)
+{
+	__ufshcd_cmd_log(hba, str, cmd_type, tag, cmd_id, idn, 0, 0, 0);
+}
+
+static void ufshcd_dme_cmd_log(struct ufs_hba *hba, char *str, u8 cmd_id)
+{
+	ufshcd_cmd_log(hba, str, "dme", 0, cmd_id, 0);
+}
+
+static void ufshcd_custom_cmd_log(struct ufs_hba *hba, char *str)
+{
+	ufshcd_cmd_log(hba, str, "custom", 0, 0, 0);
+}
+
+static void ufshcd_print_cmd_log(struct ufs_hba *hba)
+{
+	int i, pos;
+	struct ufshcd_cmd_log_entry *p;
+
+	if (!hba->cmd_log.entries)
+		return;
+
+	pos = hba->cmd_log.pos;
+	for (i = 0; i < UFSHCD_MAX_CMD_LOGGING; i++) {
+		p = &hba->cmd_log.entries[pos];
+		pos = (pos + 1) % UFSHCD_MAX_CMD_LOGGING;
+		if (ktime_to_us(p->tstamp)) {
+			pr_err("%s: %s: seq_no=%u lun=0x%x cmd_id=0x%02x lba=0x%llx txfer_len=%d tag=%u, doorbell=0x%x outstanding=0x%x idn=%d time=%llu us\n",
+				p->cmd_type, p->str, p->seq_num, p->lun, p->cmd_id,
+				(unsigned long long)p->lba, p->transfer_len, p->tag,
+				p->doorbell, p->outstanding_reqs, p->idn, ktime_to_us(p->tstamp));
+			usleep_range(1000, 1100);
+		}
+	}
+}
+#else
+static inline void ufshcd_cmd_log_init(struct ufs_hba *hba) {}
+static inline void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
+				    unsigned int tag, u8 cmd_id, u8 idn, u8 lun,
+				    sector_t lba, int transfer_len) {}
+static inline void ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
+				  unsigned int tag, u8 cmd_id, u8 idn) {}
+static inline void ufshcd_dme_cmd_log(struct ufs_hba *hba, char *str, u8 cmd_id) {}
+static inline void ufshcd_custom_cmd_log(struct ufs_hba *hba, char *str) {}
+static inline void ufshcd_print_cmd_log(struct ufs_hba *hba) {}
 #endif
 
 static void ufshcd_print_clk_freqs(struct ufs_hba *hba)
@@ -4074,7 +4024,9 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba,
 
 	hba->dev_cmd.complete = &wait;
 
+#ifdef CONFIG_TRACING
 	ufshcd_add_query_upiu_trace(hba, tag, "query_send");
+#endif
 	/* Make sure descriptors are ready before ringing the doorbell */
 	wmb();
 	spin_lock_irqsave(hba->host->host_lock, flags);
@@ -4088,8 +4040,10 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba,
 	}
 	err = ufshcd_wait_for_dev_cmd(hba, lrbp, timeout);
 
+#ifdef CONFIG_TRACING
 	ufshcd_add_query_upiu_trace(hba, tag,
 			err ? "query_complete_err" : "query_complete");
+#endif
 
 out_put_tag:
 	ufshcd_put_dev_cmd_tag(hba, tag);
@@ -7753,14 +7707,17 @@ static int __ufshcd_issue_tm_cmd(struct ufs_hba *hba,
 
 	spin_unlock_irqrestore(host->host_lock, flags);
 
+#ifdef CONFIG_TRACING
 	ufshcd_add_tm_upiu_trace(hba, task_tag, "tm_send");
-
+#endif
 	/* wait until the task management command is completed */
 	err = wait_event_timeout(hba->tm_wq,
 			test_bit(free_slot, &hba->tm_condition),
 			msecs_to_jiffies(TM_CMD_TIMEOUT));
 	if (!err) {
+#ifdef CONFIG_TRACING
 		ufshcd_add_tm_upiu_trace(hba, task_tag, "tm_complete_err");
+#endif
 		dev_err(hba->dev, "%s: task management cmd 0x%.2x timed-out\n",
 				__func__, tm_function);
 		if (ufshcd_clear_tm_cmd(hba, free_slot))
@@ -7774,8 +7731,9 @@ static int __ufshcd_issue_tm_cmd(struct ufs_hba *hba,
 		err = 0;
 		memcpy(treq, hba->utmrdl_base_addr + free_slot, sizeof(*treq));
 
+#ifdef CONFIG_TRACING
 		ufshcd_add_tm_upiu_trace(hba, task_tag, "tm_complete");
-
+#endif
 		spin_lock_irqsave(hba->host->host_lock, flags);
 		__clear_bit(free_slot, &hba->outstanding_tasks);
 		spin_unlock_irqrestore(hba->host->host_lock, flags);
