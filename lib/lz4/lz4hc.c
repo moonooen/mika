@@ -40,6 +40,7 @@
 /*===    Dependency    ===*/
 #define LZ4_HC_STATIC_LINKING_ONLY
 #include "lz4hc.h"
+#include <linux/slab.h>
 
 /*! HEAPMODE :
  *  Select how stateless HC compression functions like `LZ4_compress_HC()`
