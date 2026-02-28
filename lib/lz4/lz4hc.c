@@ -1919,33 +1919,31 @@ int LZ4_compress_HC_extStateHC_fastReset(void *state, const char *src,
 					 char *dst, int srcSize,
 					 int dstCapacity, int compressionLevel)
 {
-	LZ4HC_CCtx_internal *ctx_heap;
-	int result;
-
+	LZ4HC_CCtx_internal *const ctx =
+		&((LZ4_streamHC_t *)state)->internal_donotuse;
 	if (!LZ4_isAligned(state, LZ4_streamHC_t_alignment()))
 		return 0;
-
-	ctx_heap = kmalloc(sizeof(LZ4HC_CCtx_internal), GFP_KERNEL);
-	if (!ctx_heap)
-		return 0;
-
 	LZ4_resetStreamHC_fast((LZ4_streamHC_t *)state, compressionLevel);
-
-	memcpy(ctx_heap, &((LZ4_streamHC_t *)state)->internal_donotuse, sizeof(LZ4HC_CCtx_internal));
-
-	LZ4HC_init_internal(ctx_heap, (const BYTE *)src);
-
+	LZ4HC_init_internal(ctx, (const BYTE *)src);
 	if (dstCapacity < LZ4_compressBound(srcSize))
-		result = LZ4HC_compress_generic(ctx_heap, src, dst, &srcSize,
-						dstCapacity, compressionLevel,
-						limitedOutput);
+		return LZ4HC_compress_generic(ctx, src, dst, &srcSize,
+					      dstCapacity, compressionLevel,
+					      limitedOutput);
 	else
-		result = LZ4HC_compress_generic(ctx_heap, src, dst, &srcSize,
-						dstCapacity, compressionLevel,
-						notLimited);
+		return LZ4HC_compress_generic(ctx, src, dst, &srcSize,
+					      dstCapacity, compressionLevel,
+					      notLimited);
+}
 
-	kfree(ctx_heap);
-	return result;
+int LZ4_compress_HC_extStateHC(void *state, const char *src, char *dst,
+			       int srcSize, int dstCapacity,
+			       int compressionLevel)
+{
+	LZ4_streamHC_t *const ctx = LZ4_initStreamHC(state, sizeof(*ctx));
+	if (ctx == NULL)
+		return 0; /* init failure */
+	return LZ4_compress_HC_extStateHC_fastReset(
+		state, src, dst, srcSize, dstCapacity, compressionLevel);
 }
 
 int LZ4_compress_HC(const char *src, char *dst, int srcSize, int dstCapacity,
